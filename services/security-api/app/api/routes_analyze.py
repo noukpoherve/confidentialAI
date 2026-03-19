@@ -1,9 +1,15 @@
 from fastapi import APIRouter
 
+from app.agents.asi import notify_critical_incident
+from app.agents.orchestrator import analyze_prompt_with_agents, validate_response_with_agents
 from app.core.config import settings
 from app.core.incident_store import get_incident_store
-from app.core.policy_engine import analyze_prompt
-from app.schemas.analyze import AnalyzeRequest, AnalyzeResponse
+from app.schemas.analyze import (
+    AnalyzeRequest,
+    AnalyzeResponse,
+    ValidateResponseRequest,
+    ValidateResponseResponse,
+)
 
 router = APIRouter(prefix="/v1", tags=["analysis"])
 
@@ -18,11 +24,22 @@ def _build_redacted_prompt(prompt: str, redactions: list[dict]) -> str:
     return redacted
 
 
-def _build_incident_payload(request: AnalyzeRequest, response: AnalyzeResponse) -> dict:
-    tenant_id = request.metadata.tenantId if request.metadata else None
+def _build_incident_payload(
+    *,
+    request_id: str,
+    platform: str,
+    raw_text: str,
+    user_consent: bool | None,
+    metadata: dict,
+    response: AnalyzeResponse | ValidateResponseResponse,
+    incident_type: str,
+    graph_trace: list[str],
+) -> dict:
+    tenant_id = metadata.get("tenantId")
     return {
-        "requestId": request.requestId,
-        "platform": request.platform,
+        "incidentType": incident_type,
+        "requestId": request_id,
+        "platform": platform,
         "action": response.action,
         "riskScore": response.riskScore,
         "reasons": response.reasons,
@@ -30,10 +47,11 @@ def _build_incident_payload(request: AnalyzeRequest, response: AnalyzeResponse) 
         "redactions": [r.model_dump() for r in response.redactions],
         "createdAt": response.createdAt,
         "tenantId": tenant_id,
-        "userConsent": request.userConsent,
-        "metadata": request.metadata.model_dump() if request.metadata else {},
+        "userConsent": user_consent,
+        "metadata": metadata,
+        "graphTrace": graph_trace,
         # Keep a short redacted preview only, never raw prompt content.
-        "promptPreview": _build_redacted_prompt(request.prompt, [r.model_dump() for r in response.redactions])[
+        "contentPreview": _build_redacted_prompt(raw_text, [r.model_dump() for r in response.redactions])[
             :300
         ],
     }
@@ -41,7 +59,8 @@ def _build_incident_payload(request: AnalyzeRequest, response: AnalyzeResponse) 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
 def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
-    decision = analyze_prompt(prompt=request.prompt, user_consent=request.userConsent)
+    execution = analyze_prompt_with_agents(prompt=request.prompt, user_consent=request.userConsent)
+    decision = execution.decision
     response = AnalyzeResponse(
         requestId=request.requestId,
         action=decision.action,
@@ -50,12 +69,55 @@ def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
         detections=decision.detections,
         redactions=decision.redactions,
         createdAt=decision.created_at,
+        graphTrace=execution.graph_trace,
     )
-    incident = _build_incident_payload(request, response)
+    incident = _build_incident_payload(
+        request_id=request.requestId,
+        platform=request.platform,
+        raw_text=request.prompt,
+        user_consent=request.userConsent,
+        metadata=request.metadata.model_dump() if request.metadata else {},
+        response=response,
+        incident_type="PROMPT",
+        graph_trace=execution.graph_trace,
+    )
     try:
         get_incident_store().save_incident(incident)
+        notify_critical_incident(incident)
     except Exception:
         # Keep the API fail-open if incident persistence is temporarily unavailable.
+        pass
+    return response
+
+
+@router.post("/validate-response", response_model=ValidateResponseResponse)
+def validate_response(request: ValidateResponseRequest) -> ValidateResponseResponse:
+    execution = validate_response_with_agents(response_text=request.responseText)
+    decision = execution.decision
+    response = ValidateResponseResponse(
+        requestId=request.requestId,
+        action=decision.action,
+        riskScore=decision.risk_score,
+        reasons=decision.reasons,
+        detections=decision.detections,
+        redactions=decision.redactions,
+        createdAt=decision.created_at,
+        graphTrace=execution.graph_trace,
+    )
+    incident = _build_incident_payload(
+        request_id=request.requestId,
+        platform=request.platform,
+        raw_text=request.responseText,
+        user_consent=None,
+        metadata=request.metadata.model_dump() if request.metadata else {},
+        response=response,
+        incident_type="RESPONSE",
+        graph_trace=execution.graph_trace,
+    )
+    try:
+        get_incident_store().save_incident(incident)
+        notify_critical_incident(incident)
+    except Exception:
         pass
     return response
 

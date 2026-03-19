@@ -24,6 +24,11 @@ const SITE_CONFIGS = [
       'div[contenteditable="true"][data-lexical-editor="true"]',
       'div[contenteditable="true"][role="textbox"]',
     ],
+    responseSelectors: [
+      'div[data-message-author-role="assistant"] .markdown',
+      'div[data-message-author-role="assistant"]',
+      'article[data-testid*="conversation-turn"] .markdown',
+    ],
   },
   {
     id: "claude",
@@ -31,6 +36,11 @@ const SITE_CONFIGS = [
     sendButtonPatterns: [/send/i, /submit/i],
     sendButtonSelectors: ['button[aria-label*="Send" i]', 'button[aria-label*="Submit" i]'],
     promptSelectors: ['div[contenteditable="true"]', 'textarea'],
+    responseSelectors: [
+      'div[data-testid*="assistant"]',
+      'main [role="article"]',
+      'main .prose',
+    ],
   },
   {
     id: "gemini",
@@ -38,6 +48,11 @@ const SITE_CONFIGS = [
     sendButtonPatterns: [/send/i, /run/i, /ask/i],
     sendButtonSelectors: ['button[aria-label*="Send" i]', 'button[aria-label*="Run" i]'],
     promptSelectors: ['textarea', 'div[contenteditable="true"]'],
+    responseSelectors: [
+      'message-content',
+      '[data-test-id*="response"]',
+      'main article',
+    ],
   },
 ];
 

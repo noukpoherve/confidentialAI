@@ -7,11 +7,16 @@ Chrome MV3 extension that intercepts prompts on AI platforms.
 - supported-page detection (ChatGPT, Claude, Gemini)
 - pre-submit interception (Enter / send-like button click)
 - backend call to `POST /v1/analyze`
+- backend call to `POST /v1/validate-response` for AI output checks
 - actions:
   - `ALLOW`: do nothing
-  - `ANONYMIZE`: apply local redaction
-  - `BLOCK`: block submission
-  - `WARN`: ask for confirmation
+  - `ANONYMIZE`: open review modal, then auto-filter on user choice
+  - `BLOCK`: open review modal and prevent direct submission
+  - `WARN`: open review modal for manual edit or auto-filter
+- response-side actions:
+  - `ANONYMIZE`: redact sensitive parts in rendered response
+  - `BLOCK`: mask response content in UI
+  - `WARN`: ask user whether to keep response visible
 
 ## Local installation
 

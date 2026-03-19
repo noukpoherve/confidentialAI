@@ -33,7 +33,7 @@ curl -X POST http://localhost:8080/v1/analyze \
 ## V1 Principles
 
 - deterministic first: regex + clear policy engine
-- LLM support comes next (future phase)
+- optional LLM classifier can dynamically detect sensitive context
 - explainable decisions (reasons + detections + redactions)
 - incident persistence uses MongoDB when available, with in-memory fallback for local dev
 - agent roles are enabled as pluggable modules (`AFE`, `AVS`, `ASI`, `AC`)
@@ -47,3 +47,13 @@ Set the following env vars to enable alerting for critical incidents:
 - `TELEGRAM_BOT_TOKEN=<token>`
 - `TELEGRAM_CHAT_ID=<chat_id>`
 - `TELEGRAM_ALERT_ACTIONS=BLOCK,WARN`
+
+## Optional LLM-sensitive classifier
+
+Set these env vars to enable dynamic LLM classification in the graph:
+
+- `LLM_CLASSIFIER_ENABLED=true`
+- `LLM_CLASSIFIER_API_KEY=<api_key>` (or `OPENAI_API_KEY`)
+- `LLM_CLASSIFIER_API_BASE=https://api.openai.com/v1`
+- `LLM_CLASSIFIER_MODEL=gpt-4.1-mini`
+- `LLM_CLASSIFIER_TIMEOUT_SECONDS=2.5`

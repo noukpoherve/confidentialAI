@@ -1,0 +1,22 @@
+[project]
+name = "confidential-agent-security-api"
+version = "0.1.0"
+description = "FastAPI security decision engine for confidential-agent."
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "fastapi==0.116.1",
+    "httpx==0.28.1",
+    "pydantic==2.11.7",
+    "pymongo==4.11.3",
+    "uvicorn==0.35.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==8.4.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

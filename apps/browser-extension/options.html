@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Confidential Agent - Options</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        max-width: 700px;
+      }
+      label {
+        display: block;
+        margin-bottom: 6px;
+      }
+      input {
+        width: 100%;
+        padding: 8px;
+      }
+      button {
+        margin-top: 12px;
+        padding: 8px 12px;
+      }
+      .hint {
+        color: #555;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Configuration</h2>
+    <p class="hint">
+      Configure the analysis API URL (example: http://localhost:8080).
+    </p>
+
+    <label for="apiBaseUrl">API base URL</label>
+    <input id="apiBaseUrl" type="text" />
+    <button id="saveBtn">Save</button>
+    <p id="status"></p>
+
+    <script src="src/options.js"></script>
+  </body>
+</html>

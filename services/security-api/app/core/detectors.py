@@ -1,0 +1,65 @@
+import re
+from dataclasses import dataclass
+
+
+@dataclass
+class DetectorHit:
+    hit_type: str
+    raw_value: str
+    confidence: float
+
+
+DETECTOR_PATTERNS: dict[str, re.Pattern[str]] = {
+    "EMAIL": re.compile(r"\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}\b"),
+    "PHONE": re.compile(r"\b(?:\+?\d{1,3}[\s\-]?)?(?:\d[\s\-]?){7,12}\b"),
+    "IBAN": re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{10,30}\b"),
+    "API_KEY": re.compile(r"\b(?:sk|rk|pk)_[A-Za-z0-9]{16,}\b"),
+    "PASSWORD": re.compile(r"(?i)\b(?:password|mot\s*de\s*passe)\s*[:=]\s*\S+"),
+    "TOKEN": re.compile(r"(?i)\b(?:token|bearer)\s*[:=]?\s*[A-Za-z0-9\-_\.]{12,}\b"),
+    "INTERNAL_URL": re.compile(
+        r"\bhttps?://(?:localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|[a-zA-Z0-9\-]+\.internal)\S*"
+    ),
+    # Simple heuristic: detect common source-code signatures.
+    "SOURCE_CODE": re.compile(r"(?m)^\s*(?:def |class |function |import |from .* import )"),
+}
+
+
+def _preview(text: str, max_len: int = 24) -> str:
+    clean = text.replace("\n", " ")
+    if len(clean) <= max_len:
+        return clean
+    return clean[: max_len - 3] + "..."
+
+
+def detect_sensitive_content(prompt: str) -> list[DetectorHit]:
+    """
+    Deterministic regex-based detection.
+    This layer is intentionally simple and explainable for V1.
+    """
+    hits: list[DetectorHit] = []
+
+    for hit_type, pattern in DETECTOR_PATTERNS.items():
+        for match in pattern.finditer(prompt):
+            hits.append(
+                DetectorHit(
+                    hit_type=hit_type,
+                    raw_value=match.group(0),
+                    confidence=0.8 if hit_type != "SOURCE_CODE" else 0.65,
+                )
+            )
+
+    return hits
+
+
+def build_redactions(hits: list[DetectorHit]) -> list[dict[str, str]]:
+    replacements: list[dict[str, str]] = []
+    for hit in hits:
+        placeholder = f"[REDACTED_{hit.hit_type}]"
+        replacements.append(
+            {
+                "original": hit.raw_value,
+                "replacement": placeholder,
+                "reason": f"Sensitive pattern detected: {hit.hit_type}",
+            }
+        )
+    return replacements

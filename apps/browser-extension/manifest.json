@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Confidential Agent Guardrail",
+  "version": "0.1.0",
+  "description": "DLP guardrail for generative AI prompts.",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://claude.ai/*",
+    "https://gemini.google.com/*",
+    "http://localhost:8080/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*"
+      ],
+      "js": ["src/siteConfigs.js", "src/redactor.js", "src/contentScript.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Confidential Agent",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html"
+}

@@ -42,7 +42,7 @@ def test_analyze_persists_incident_and_lists_it(monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["action"] in {"ANONYMIZE", "WARN", "BLOCK", "ALLOW"}
-    assert body["graphTrace"] == ["afe", "ac"]
+    assert body["graphTrace"] == ["afe", "llm_classifier", "ac"]
 
     listed = client.get("/v1/incidents")
     assert listed.status_code == 200
@@ -53,7 +53,7 @@ def test_analyze_persists_incident_and_lists_it(monkeypatch) -> None:
     assert item["requestId"] == "req-api-test-1"
     assert item["tenantId"] == "tenant-a"
     assert item["incidentType"] == "PROMPT"
-    assert item["graphTrace"] == ["afe", "ac"]
+    assert item["graphTrace"] == ["afe", "llm_classifier", "ac"]
     assert "contentPreview" in item
     assert "alice@example.com" not in item["contentPreview"]
 
@@ -66,7 +66,7 @@ def test_analyze_stays_available_if_incident_store_fails(monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["requestId"] == "req-api-test-1"
-    assert body["graphTrace"] == ["afe", "ac"]
+    assert body["graphTrace"] == ["afe", "llm_classifier", "ac"]
 
 
 def test_validate_response_creates_response_incident(monkeypatch) -> None:
@@ -84,7 +84,7 @@ def test_validate_response_creates_response_incident(monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["requestId"] == "req-response-test-1"
-    assert body["graphTrace"] == ["avs", "ac"]
+    assert body["graphTrace"] == ["avs", "llm_classifier", "ac"]
 
     listed = client.get("/v1/incidents")
     assert listed.status_code == 200
@@ -92,4 +92,4 @@ def test_validate_response_creates_response_incident(monkeypatch) -> None:
     assert len(items) == 1
     assert items[0]["incidentType"] == "RESPONSE"
     assert items[0]["tenantId"] == "tenant-b"
-    assert items[0]["graphTrace"] == ["avs", "ac"]
+    assert items[0]["graphTrace"] == ["avs", "llm_classifier", "ac"]

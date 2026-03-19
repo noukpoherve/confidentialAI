@@ -115,6 +115,7 @@ This V1 currently includes:
 - step-by-step documentation in `docs/`.
 
 Engineering standards are defined in `docs/ENGINEERING_STANDARDS.md`.
+LangGraph and workflow documentation is available in `docs/NOTION_WORKFLOW_GUIDE.md`.
 
 ## 6) Next Steps (Roadmap)
 

@@ -6,6 +6,7 @@ Central security decision API for AI prompts.
 
 - `GET /health`
 - `POST /v1/analyze`
+- `POST /v1/validate-response`
 - `GET /v1/incidents`
 
 ## Run locally
@@ -35,3 +36,14 @@ curl -X POST http://localhost:8080/v1/analyze \
 - LLM support comes next (future phase)
 - explainable decisions (reasons + detections + redactions)
 - incident persistence uses MongoDB when available, with in-memory fallback for local dev
+- agent roles are enabled as pluggable modules (`AFE`, `AVS`, `ASI`, `AC`)
+- prompt and response orchestration are executed through LangGraph state graphs
+
+## Optional Telegram alerts
+
+Set the following env vars to enable alerting for critical incidents:
+
+- `TELEGRAM_ALERTS_ENABLED=true`
+- `TELEGRAM_BOT_TOKEN=<token>`
+- `TELEGRAM_CHAT_ID=<chat_id>`
+- `TELEGRAM_ALERT_ACTIONS=BLOCK,WARN`

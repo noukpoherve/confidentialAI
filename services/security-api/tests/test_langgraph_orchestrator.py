@@ -8,7 +8,7 @@ def test_prompt_graph_returns_policy_decision() -> None:
     decision = execution.decision
     assert decision.action == "BLOCK"
     assert decision.risk_score >= 40
-    assert execution.graph_trace == ["afe", "ac"]
+    assert execution.graph_trace == ["afe", "llm_classifier", "ac"]
 
 
 def test_response_graph_detects_sensitive_output() -> None:
@@ -18,4 +18,4 @@ def test_response_graph_detects_sensitive_output() -> None:
     decision = execution.decision
     assert decision.action in {"WARN", "ANONYMIZE", "BLOCK"}
     assert len(decision.detections) >= 1
-    assert execution.graph_trace == ["avs", "ac"]
+    assert execution.graph_trace == ["avs", "llm_classifier", "ac"]

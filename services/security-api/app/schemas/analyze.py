@@ -40,3 +40,22 @@ class AnalyzeResponse(BaseModel):
     detections: list[DetectionHit]
     redactions: list[RedactionProposal]
     createdAt: str
+    graphTrace: list[str] = Field(default_factory=list)
+
+
+class ValidateResponseRequest(BaseModel):
+    requestId: str = Field(..., min_length=4, max_length=128)
+    platform: PlatformType = "unknown"
+    responseText: str = Field(..., min_length=1, max_length=20_000)
+    metadata: AnalyzeMetadata | None = None
+
+
+class ValidateResponseResponse(BaseModel):
+    requestId: str
+    action: SecurityAction
+    riskScore: int
+    reasons: list[str]
+    detections: list[DetectionHit]
+    redactions: list[RedactionProposal]
+    createdAt: str
+    graphTrace: list[str] = Field(default_factory=list)

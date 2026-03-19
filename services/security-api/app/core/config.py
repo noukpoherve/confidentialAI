@@ -18,6 +18,14 @@ class Settings(BaseModel):
     mongodb_db_name: str = os.getenv("MONGODB_DB_NAME", "confidential_agent")
     mongodb_incidents_collection: str = os.getenv("MONGODB_INCIDENTS_COLLECTION", "incidents")
     incidents_list_limit: int = int(os.getenv("INCIDENTS_LIST_LIMIT", "100"))
+    telegram_alerts_enabled: bool = os.getenv("TELEGRAM_ALERTS_ENABLED", "false").lower() == "true"
+    telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
+    telegram_alert_actions: list[str] = [
+        action.strip().upper()
+        for action in os.getenv("TELEGRAM_ALERT_ACTIONS", "BLOCK,WARN").split(",")
+        if action.strip()
+    ]
 
 
 settings = Settings()

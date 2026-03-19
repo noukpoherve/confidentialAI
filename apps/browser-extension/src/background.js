@@ -6,14 +6,19 @@ async function getApiBaseUrl() {
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== "ANALYZE_PROMPT") {
+  const routeByType = {
+    ANALYZE_PROMPT: "/v1/analyze",
+    ANALYZE_RESPONSE: "/v1/validate-response",
+  };
+  const route = routeByType[message?.type];
+  if (!route) {
     return false;
   }
 
   (async () => {
     try {
       const apiBaseUrl = await getApiBaseUrl();
-      const response = await fetch(`${apiBaseUrl}/v1/analyze`, {
+      const response = await fetch(`${apiBaseUrl}${route}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(message.payload),

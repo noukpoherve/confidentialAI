@@ -14,7 +14,9 @@ DETECTOR_PATTERNS: dict[str, re.Pattern[str]] = {
     "PHONE": re.compile(r"\b(?:\+?\d{1,3}[\s\-]?)?(?:\d[\s\-]?){7,12}\b"),
     "IBAN": re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{10,30}\b"),
     "API_KEY": re.compile(r"\b(?:sk|rk|pk)_[A-Za-z0-9]{16,}\b"),
-    "PASSWORD": re.compile(r"(?i)\b(?:password|mot\s*de\s*passe)\s*[:=]\s*\S+"),
+    "PASSWORD": re.compile(
+        r"(?i)\b(?:password|passphrase|pwd|mot\s*de\s*passe)\b(?:\s*(?:is|est|=|:)\s*|\s+)(?:\"[^\"]{3,}\"|'[^']{3,}'|[^\s,;]{4,})"
+    ),
     "TOKEN": re.compile(r"(?i)\b(?:token|bearer)\s*[:=]?\s*[A-Za-z0-9\-_\.]{12,}\b"),
     "INTERNAL_URL": re.compile(
         r"\bhttps?://(?:localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|[a-zA-Z0-9\-]+\.internal)\S*"
@@ -22,6 +24,8 @@ DETECTOR_PATTERNS: dict[str, re.Pattern[str]] = {
     # Simple heuristic: detect common source-code signatures.
     "SOURCE_CODE": re.compile(r"(?m)^\s*(?:def |class |function |import |from .* import )"),
 }
+
+REDACTED_PLACEHOLDER_PATTERN = re.compile(r"\[REDACTED_[A-Z_]+\]")
 
 
 def _preview(text: str, max_len: int = 24) -> str:
@@ -40,10 +44,14 @@ def detect_sensitive_content(prompt: str) -> list[DetectorHit]:
 
     for hit_type, pattern in DETECTOR_PATTERNS.items():
         for match in pattern.finditer(prompt):
+            raw_value = match.group(0)
+            # Already-redacted placeholders should not be re-flagged as sensitive.
+            if REDACTED_PLACEHOLDER_PATTERN.search(raw_value):
+                continue
             hits.append(
                 DetectorHit(
                     hit_type=hit_type,
-                    raw_value=match.group(0),
+                    raw_value=raw_value,
                     confidence=0.8 if hit_type != "SOURCE_CODE" else 0.65,
                 )
             )

@@ -26,13 +26,15 @@ Two state graphs are compiled:
 
 1. Prompt graph
    - `afe` node: input filtering analysis
+   - `llm_classifier` node: optional OpenAI-compatible sensitive-text classifier (fail-open)
    - `ac` node: arbitration
-   - trace example: `["afe", "ac"]`
+   - trace example: `["afe", "llm_classifier", "ac"]`
 
 2. Response graph
    - `avs` node: AI response validation
+   - `llm_classifier` node: same optional classifier on response text
    - `ac` node: arbitration
-   - trace example: `["avs", "ac"]`
+   - trace example: `["avs", "llm_classifier", "ac"]`
 
 The API returns this execution order as `graphTrace` so each decision is auditable.
 
@@ -46,10 +48,11 @@ Endpoint: `POST /v1/analyze`
 flowchart TD
     A[Request: prompt] --> B[LangGraph Prompt Graph]
     B --> C[AFE node]
-    C --> D[AC node]
-    D --> E[AnalyzeResponse with graphTrace]
-    E --> F[Persist incident]
-    F --> G[Optional Telegram alert]
+    C --> D[LLM classifier node optional]
+    D --> E[AC node]
+    E --> F[AnalyzeResponse with graphTrace]
+    F --> G[Persist incident]
+    G --> H[Optional Telegram alert]
 ```
 
 ### B) Response validation workflow
@@ -60,10 +63,11 @@ Endpoint: `POST /v1/validate-response`
 flowchart TD
     A[Request: responseText] --> B[LangGraph Response Graph]
     B --> C[AVS node]
-    C --> D[AC node]
-    D --> E[ValidateResponseResponse with graphTrace]
-    E --> F[Persist incident]
-    F --> G[Optional Telegram alert]
+    C --> D[LLM classifier node optional]
+    D --> E[AC node]
+    E --> F[ValidateResponseResponse with graphTrace]
+    F --> G[Persist incident]
+    G --> H[Optional Telegram alert]
 ```
 
 ### C) Incident retrieval workflow
@@ -78,6 +82,7 @@ Endpoint: `GET /v1/incidents`
 
 - `AFE` (Input Filtering Agent): prompt-level risk decision
 - `AVS` (AI Validation Sentinel): response-level risk decision
+- `llm_classifier`: optional second opinion via chat-completions API (see `LLM_CLASSIFIER_*` env vars in `services/security-api/README.md`)
 - `AC` (Arbitration Controller): confirms/adjusts ambiguous decisions
 - `ASI` (Alerting and Surveillance Intelligence): sends critical notifications (Telegram hook)
 
@@ -110,6 +115,12 @@ Run only API incident tests:
 uv run pytest -q tests/test_api_incidents.py
 ```
 
+Run only LLM classifier unit tests:
+
+```bash
+uv run pytest -q tests/test_llm_classifier.py
+```
+
 Manual API checks (after starting server):
 
 - `GET /health`
@@ -119,15 +130,21 @@ Manual API checks (after starting server):
 
 Expected:
 
-- analyze response includes `graphTrace: ["afe", "ac"]`
-- validate-response includes `graphTrace: ["avs", "ac"]`
+- analyze response includes `graphTrace: ["afe", "llm_classifier", "ac"]`
+- validate-response includes `graphTrace: ["avs", "llm_classifier", "ac"]`
 - incidents include `incidentType` and `graphTrace`
 
 ## 7) Current limits and next increment
 
-Current agent nodes still rely on deterministic policy logic.
-Next increment is to replace or augment node internals with model-assisted reasoning while preserving:
+`AFE` / `AVS` still use deterministic policy logic; the optional `llm_classifier` adds model-assisted escalation in fail-open mode.
+
+Next increment ideas:
+
+- richer policies per tenant
+- stronger UX in the extension for WARN/BLOCK on responses
+
+While preserving:
 
 - test coverage
 - graph traceability
-- fail-open resilience for persistence/alerting
+- fail-open resilience for persistence/alerting and for the LLM node

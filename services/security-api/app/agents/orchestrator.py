@@ -3,6 +3,7 @@ from typing import NotRequired, TypedDict
 
 from app.agents.ac import run_ac
 from app.agents.afe import run_afe
+from app.agents.llm_classifier import run_llm_classifier
 from app.agents.avs import run_avs
 from app.core.policy_engine import PolicyDecision
 from langgraph.graph import END, START, StateGraph
@@ -37,6 +38,11 @@ def _prompt_ac_node(state: PromptGraphState) -> PromptGraphState:
     return {"decision": decision, "visited": [*state.get("visited", []), "ac"]}
 
 
+def _prompt_llm_classifier_node(state: PromptGraphState) -> PromptGraphState:
+    decision = run_llm_classifier(text=state["prompt"], decision=state["decision"])
+    return {"decision": decision, "visited": [*state.get("visited", []), "llm_classifier"]}
+
+
 def _response_avs_node(state: ResponseGraphState) -> ResponseGraphState:
     decision = run_avs(response_text=state["response_text"])
     return {"decision": decision, "visited": [*state.get("visited", []), "avs"]}
@@ -47,12 +53,19 @@ def _response_ac_node(state: ResponseGraphState) -> ResponseGraphState:
     return {"decision": decision, "visited": [*state.get("visited", []), "ac"]}
 
 
+def _response_llm_classifier_node(state: ResponseGraphState) -> ResponseGraphState:
+    decision = run_llm_classifier(text=state["response_text"], decision=state["decision"])
+    return {"decision": decision, "visited": [*state.get("visited", []), "llm_classifier"]}
+
+
 def _build_prompt_graph():
     graph = StateGraph(PromptGraphState)
     graph.add_node("afe", _prompt_afe_node)
+    graph.add_node("llm_classifier", _prompt_llm_classifier_node)
     graph.add_node("ac", _prompt_ac_node)
     graph.add_edge(START, "afe")
-    graph.add_edge("afe", "ac")
+    graph.add_edge("afe", "llm_classifier")
+    graph.add_edge("llm_classifier", "ac")
     graph.add_edge("ac", END)
     return graph.compile()
 
@@ -60,9 +73,11 @@ def _build_prompt_graph():
 def _build_response_graph():
     graph = StateGraph(ResponseGraphState)
     graph.add_node("avs", _response_avs_node)
+    graph.add_node("llm_classifier", _response_llm_classifier_node)
     graph.add_node("ac", _response_ac_node)
     graph.add_edge(START, "avs")
-    graph.add_edge("avs", "ac")
+    graph.add_edge("avs", "llm_classifier")
+    graph.add_edge("llm_classifier", "ac")
     graph.add_edge("ac", END)
     return graph.compile()
 
@@ -75,7 +90,8 @@ def analyze_prompt_with_agents(prompt: str, user_consent: bool | None) -> AgentE
     """
     Prompt orchestration pipeline:
     1) AFE for initial decision
-    2) AC for arbitration of ambiguous cases
+    2) LLM classifier (optional) for dynamic detection
+    3) AC for arbitration of ambiguous cases
     """
     result = _prompt_graph.invoke({"prompt": prompt, "user_consent": user_consent, "visited": []})
     return AgentExecution(decision=result["decision"], graph_trace=result.get("visited", []))
@@ -85,7 +101,8 @@ def validate_response_with_agents(response_text: str) -> AgentExecution:
     """
     Response orchestration pipeline:
     1) AVS for response-level validation
-    2) AC for arbitration of ambiguous cases
+    2) LLM classifier (optional) for dynamic detection
+    3) AC for arbitration of ambiguous cases
     """
     result = _response_graph.invoke({"response_text": response_text, "visited": []})
     return AgentExecution(decision=result["decision"], graph_trace=result.get("visited", []))

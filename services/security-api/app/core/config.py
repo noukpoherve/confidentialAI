@@ -26,6 +26,11 @@ class Settings(BaseModel):
         for action in os.getenv("TELEGRAM_ALERT_ACTIONS", "BLOCK,WARN").split(",")
         if action.strip()
     ]
+    llm_classifier_enabled: bool = os.getenv("LLM_CLASSIFIER_ENABLED", "false").lower() == "true"
+    llm_classifier_api_base: str = os.getenv("LLM_CLASSIFIER_API_BASE", "https://api.openai.com/v1")
+    llm_classifier_model: str = os.getenv("LLM_CLASSIFIER_MODEL", "gpt-4.1-mini")
+    llm_classifier_api_key: str = os.getenv("LLM_CLASSIFIER_API_KEY", os.getenv("OPENAI_API_KEY", ""))
+    llm_classifier_timeout_seconds: float = float(os.getenv("LLM_CLASSIFIER_TIMEOUT_SECONDS", "2.5"))
 
 
 settings = Settings()

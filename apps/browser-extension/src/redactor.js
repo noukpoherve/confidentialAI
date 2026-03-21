@@ -5,7 +5,7 @@
 
 const LOCAL_PATTERNS = [
   { type: "EMAIL", regex: /\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}\b/g },
-  { type: "PHONE", regex: /\b(?:\+?\d{1,3}[\s\-]?)?(?:\d[\s\-]?){7,12}\b/g },
+  { type: "PHONE", regex: /(?:(?<!\d)\+\d{1,3}[\s\-]?\(?\d{1,4}\)?[\s\-]?\d{3,4}[\s\-]\d{3,9}(?!\d)|(?<!\d)\(\d{2,4}\)[\s\-]?\d{3,4}[\s\-]\d{4}(?!\d)|\b\d{3}[\s.\-]\d{3}[\s.\-]\d{4}\b|\b\d{2}[\s.\-]\d{2}[\s.\-]\d{2}[\s.\-]\d{2}[\s.\-]\d{2}\b)/g },
   { type: "IBAN", regex: /\b[A-Z]{2}\d{2}[A-Z0-9]{10,30}\b/g },
   { type: "API_KEY", regex: /\b(?:sk|rk|pk)_[A-Za-z0-9]{16,}\b/g },
   { type: "PASSWORD", regex: /\b(?:password|passphrase|pwd|mot\s*de\s*passe)\b(?:\s*(?:is|est|=|:)\s*|\s+)(?:\"[^\"]{3,}\"|'[^']{3,}'|[^\s,;]{4,})/gi },

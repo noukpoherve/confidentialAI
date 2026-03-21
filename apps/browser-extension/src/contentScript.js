@@ -687,38 +687,165 @@
     return node.dataset.confidentialAgentReviewed === hash;
   }
 
+  // ── Response redaction helpers ────────────────────────────────────────────
+
+  /**
+   * Create a styled <span> for a single redacted fragment.
+   * - BLOCK  : original text stays in the DOM but is blurred (can't be read).
+   * - WARN / ANONYMIZE : text is replaced with a coloured [REDACTED_TYPE] pill.
+   */
+  function createRedactionSpan(original, replacement, action) {
+    const span = document.createElement("span");
+    span.dataset.confidentialAgentRedacted = "true";
+    if (action === "BLOCK") {
+      span.textContent = original;
+      Object.assign(span.style, {
+        filter: "blur(5px)",
+        userSelect: "none",
+        pointerEvents: "none",
+        display: "inline",
+        background: "rgba(239,68,68,0.10)",
+        borderRadius: "3px",
+        padding: "0 1px",
+      });
+      span.title = "Sensitive content blocked by Confidential Agent";
+    } else {
+      span.textContent = replacement;
+      Object.assign(span.style, {
+        background: "#fef3c7",
+        color: "#92400e",
+        fontFamily: "ui-monospace,SFMono-Regular,monospace",
+        fontSize: "0.82em",
+        fontWeight: "600",
+        borderRadius: "4px",
+        padding: "1px 5px",
+        border: "1px solid #fcd34d",
+        cursor: "default",
+        display: "inline",
+        whiteSpace: "nowrap",
+      });
+      const base = original.slice(0, 30);
+      span.title = `Redacted: "${base}${original.length > 30 ? "…" : ""}"`;
+    }
+    return span;
+  }
+
+  /**
+   * Surgically redact specific text fragments inside a response DOM node.
+   * Traverses only TEXT nodes — preserves markdown-rendered HTML (bold, code,
+   * headers, lists) completely intact.
+   *
+   * Returns true if at least one fragment was found and replaced.
+   * Returns false when no match was found (caller should use fallback).
+   */
+  function redactResponseNodeSurgically(node, redactions, action) {
+    if (!(node instanceof HTMLElement)) return false;
+    const valid = (Array.isArray(redactions) ? redactions : []).filter(
+      (r) => r && typeof r.original === "string" && r.original.length > 0
+    );
+    if (valid.length === 0) return false;
+
+    // Build a single regex with a capturing group so String.split() keeps matches.
+    const escaped = valid.map((r) => r.original.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const pattern = new RegExp(`(${escaped.join("|")})`, "g");
+    const replacementMap = new Map(valid.map((r) => [r.original, r.replacement || "[REDACTED]"]));
+
+    // Collect text nodes (skip script/style and already-redacted spans).
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, {
+      acceptNode(n) {
+        const p = n.parentElement;
+        if (!p) return NodeFilter.FILTER_REJECT;
+        const tag = p.tagName?.toLowerCase();
+        if (["script", "style", "noscript"].includes(tag)) return NodeFilter.FILTER_REJECT;
+        if (p.dataset?.confidentialAgentRedacted === "true") return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+
+    const hits = [];
+    let n;
+    while ((n = walker.nextNode())) {
+      pattern.lastIndex = 0;
+      if (pattern.test(n.textContent)) hits.push(n);
+    }
+    if (hits.length === 0) return false;
+
+    for (const textNode of hits) {
+      pattern.lastIndex = 0;
+      const parts = textNode.textContent.split(pattern);
+      if (parts.length <= 1) continue;
+
+      const frag = document.createDocumentFragment();
+      for (const part of parts) {
+        if (!part) continue;
+        if (replacementMap.has(part)) {
+          frag.appendChild(createRedactionSpan(part, replacementMap.get(part), action));
+        } else {
+          frag.appendChild(document.createTextNode(part));
+        }
+      }
+      textNode.parentNode?.replaceChild(frag, textNode);
+    }
+    return true;
+  }
+
+  /**
+   * Insert a non-intrusive notice strip above a response node.
+   * Used for BLOCK when surgical redaction succeeded (to tell the user why
+   * some words are blurred) and as a fallback when no precise values exist.
+   */
+  function insertResponseNotice(node, { icon, message, color, bgColor, borderColor }) {
+    if (node.previousElementSibling?.dataset?.confidentialAgentNotice === "true") return;
+    const notice = document.createElement("div");
+    notice.dataset.confidentialAgentNotice = "true";
+    Object.assign(notice.style, {
+      margin: "0 0 8px 0", padding: "9px 14px",
+      background: bgColor, border: `1.5px solid ${borderColor}`, borderRadius: "10px",
+      display: "flex", alignItems: "center", gap: "10px",
+      fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif",
+      fontSize: "13px", color, lineHeight: "1.4",
+    });
+    const ico = Object.assign(document.createElement("span"), { textContent: icon });
+    ico.style.flexShrink = "0";
+    const txt = Object.assign(document.createElement("span"), { textContent: message });
+    notice.append(ico, txt);
+    node.parentElement?.insertBefore(notice, node);
+  }
+
+  /**
+   * Last-resort full-node mask for cases where no specific fragments could be
+   * identified (purely semantic LLM detection) and action is BLOCK.
+   * Kept as a fallback — surgical redaction is always preferred.
+   */
   function maskResponseNode(node, label) {
     if (!(node instanceof HTMLElement)) return;
+    if (node.dataset.confidentialAgentMasked === "true") return;
     node.dataset.confidentialAgentMasked = "true";
     node.style.filter = "blur(8px)";
     node.style.pointerEvents = "none";
     node.style.userSelect = "none";
     node.style.opacity = "0.4";
     node.style.transition = "all 0.3s ease";
-    if (node.previousElementSibling?.dataset?.confidentialAgentNotice === "true") return;
-    const notice = document.createElement("div");
-    notice.dataset.confidentialAgentNotice = "true";
-    Object.assign(notice.style, {
-      margin: "8px 0", padding: "10px 14px",
-      background: "#fef2f2", border: "1.5px solid #fca5a5", borderRadius: "10px",
-      display: "flex", alignItems: "center", gap: "10px",
-      fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif",
-      fontSize: "13px", color: "#7f1d1d", lineHeight: "1.4",
+    insertResponseNotice(node, {
+      icon: "🛡",
+      message: label,
+      color: "#7f1d1d",
+      bgColor: "#fef2f2",
+      borderColor: "#fca5a5",
     });
-    const ico = Object.assign(document.createElement("span"), { textContent: "🛡" });
-    ico.style.flexShrink = "0";
-    const txt = Object.assign(document.createElement("span"), { textContent: label });
-    notice.append(ico, txt);
-    node.parentElement?.insertBefore(notice, node);
   }
 
+  /**
+   * Local-regex fallback: used when the server returns no redaction list.
+   * Uses text-node traversal to preserve rendered HTML formatting.
+   */
   function redactResponseNode(node) {
     if (!(node instanceof HTMLElement)) return;
     const sourceText = normalizeText(node.innerText || node.textContent || "");
     if (!sourceText) return;
-    const redacted = redactorApi.applyLocalRedaction(sourceText);
-    if (redacted.text && redacted.text !== sourceText) {
-      node.innerText = redacted.text;
+    const { applied } = redactorApi.applyLocalRedaction(sourceText);
+    if (applied.length > 0) {
+      redactResponseNodeSurgically(node, applied, "ANONYMIZE");
     }
   }
 
@@ -985,17 +1112,60 @@
     if (decision.action === "ALLOW") return;
 
     if (decision.action === "BLOCK") {
-      maskResponseNode(node, "Response blocked: sensitive content detected.");
+      // Preferred path: blur only the identified sensitive fragments.
+      // The rest of the response remains fully readable.
+      const surgicalOk = redactResponseNodeSurgically(node, decision.redactions, "BLOCK");
+      if (surgicalOk) {
+        insertResponseNotice(node, {
+          icon: "🛡",
+          message: "Sensitive content has been blurred in this response.",
+          color: "#7f1d1d",
+          bgColor: "#fef2f2",
+          borderColor: "#fca5a5",
+        });
+      } else {
+        // Fallback: no specific fragments identified (semantic-only LLM detection).
+        // Try local regex before resorting to full-node masking.
+        const { applied } = redactorApi.applyLocalRedaction(
+          normalizeText(node.innerText || node.textContent || "")
+        );
+        const localOk = redactResponseNodeSurgically(node, applied, "BLOCK");
+        if (localOk) {
+          insertResponseNotice(node, {
+            icon: "🛡",
+            message: "Sensitive content has been blurred in this response.",
+            color: "#7f1d1d",
+            bgColor: "#fef2f2",
+            borderColor: "#fca5a5",
+          });
+        } else {
+          // No identifiable fragments at all — show a prominent warning but
+          // do NOT hide the full response. The user can judge the content.
+          insertResponseNotice(node, {
+            icon: "⚠️",
+            message: "Confidential Agent flagged this response as potentially sensitive. Review carefully before using.",
+            color: "#7c2d12",
+            bgColor: "#fff7ed",
+            borderColor: "#fed7aa",
+          });
+        }
+      }
       return;
     }
 
     if (decision.action === "ANONYMIZE") {
-      redactResponseNode(node);
-      showToast("Response anonymized — sensitive data replaced with placeholders.", "warning");
+      // Replace sensitive values with [REDACTED_TYPE] pills.
+      const surgicalOk = redactResponseNodeSurgically(node, decision.redactions, "ANONYMIZE");
+      if (!surgicalOk) {
+        redactResponseNode(node); // local regex fallback
+      }
+      showToast("Sensitive data anonymized in response.", "warning");
       return;
     }
 
     if (decision.action === "WARN") {
+      // Highlight sensitive fragments inline, then show warning banner.
+      redactResponseNodeSurgically(node, decision.redactions, "WARN");
       showResponseWarningBanner(
         node,
         "This AI response may contain sensitive data.",

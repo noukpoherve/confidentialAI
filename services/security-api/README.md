@@ -8,6 +8,14 @@ Central security decision API for AI prompts.
 - `POST /v1/analyze`
 - `POST /v1/validate-response`
 - `GET /v1/incidents`
+- `POST /v1/site-signals`
+- `GET /v1/site-signals/recent`
+- `GET /v1/site-signals/summary`
+- `POST /v1/auth/signup`
+- `POST /v1/auth/login`
+- `GET /v1/auth/me`
+- `GET /v1/users/me/settings`
+- `PUT /v1/users/me/settings`
 
 ## Run locally
 
@@ -57,3 +65,15 @@ Set these env vars to enable dynamic LLM classification in the graph:
 - `LLM_CLASSIFIER_API_BASE=https://api.openai.com/v1`
 - `LLM_CLASSIFIER_MODEL=gpt-4.1-mini`
 - `LLM_CLASSIFIER_TIMEOUT_SECONDS=2.5`
+
+## Auth and user settings (SaaS-ready foundation)
+
+- JWT-based authentication (signup/login/profile)
+- per-user settings storage for extension targeting preferences
+- Mongo-backed when available, in-memory fallback for local development
+
+## Site failure telemetry (admin feedback loop)
+
+- extension posts site-level runtime signals (`SITE_SELECTED`, `PROMPT_ELEMENT_NOT_FOUND`, `API_UNREACHABLE`, `EXTENSION_CONTEXT_INVALIDATED`)
+- admin can review recent events and aggregated host-level summary
+- this loop helps prioritize platform-specific selector fixes over time

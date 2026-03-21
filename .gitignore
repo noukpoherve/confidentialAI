@@ -25,3 +25,9 @@ coverage/
 
 # Localized docs kept out of Git
 README.fr.md
+
+# Environment variables — NEVER commit secrets
+.env
+.env.local
+.env.*.local
+services/security-api/.env

@@ -2,42 +2,206 @@
 <html>
   <head>
     <meta charset="UTF-8" />
-    <title>Confidential Agent - Options</title>
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        margin: 20px;
-        max-width: 700px;
-      }
-      label {
-        display: block;
-        margin-bottom: 6px;
-      }
-      input {
-        width: 100%;
-        padding: 8px;
-      }
-      button {
-        margin-top: 12px;
-        padding: 8px 12px;
-      }
-      .hint {
-        color: #555;
-        font-size: 13px;
-      }
-    </style>
+    <title>Confidential Agent — Settings</title>
+    <link rel="stylesheet" href="tailwind.output.css" />
   </head>
-  <body>
-    <h2>Configuration</h2>
-    <p class="hint">
-      Configure the analysis API URL (example: http://localhost:8080).
-    </p>
 
-    <label for="apiBaseUrl">API base URL</label>
-    <input id="apiBaseUrl" type="text" />
-    <button id="saveBtn">Save</button>
-    <p id="status"></p>
+  <body class="bg-slate-50 text-slate-900 font-sans antialiased min-h-screen">
 
+    <!-- Sticky top bar -->
+    <header class="sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-slate-200 h-14 flex items-center justify-between px-8">
+      <div class="flex items-center gap-2.5">
+        <div class="w-[26px] h-[26px] bg-gradient-to-br from-indigo-600 to-indigo-400 rounded-[7px] flex items-center justify-center shadow shadow-indigo-500/30">
+          <svg class="w-[13px] h-[13px] stroke-white" viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>
+        <span class="text-[14px] font-bold tracking-tight">Settings</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="statusPill" class="hidden text-[11.5px] font-semibold px-3 py-1 rounded-full transition-all duration-300"></span>
+        <button id="saveBtn" type="button"
+          class="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-[13px] font-semibold rounded-lg transition-all duration-150">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+            <polyline points="17 21 17 13 7 13 7 21"/>
+            <polyline points="7 3 7 8 15 8"/>
+          </svg>
+          Save settings
+        </button>
+      </div>
+    </header>
+
+    <main class="max-w-2xl mx-auto px-6 py-8 flex flex-col gap-5">
+
+      <!-- ── Guardrail master switch ── -->
+      <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+        <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
+          <div class="w-7 h-7 bg-indigo-50 rounded-[7px] flex items-center justify-center shrink-0">
+            <svg class="w-[13px] h-[13px] stroke-indigo-600" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+          </div>
+          <div>
+            <div class="text-[14px] font-bold">Guardrail</div>
+            <div class="text-[12px] text-slate-500">Master on/off for all protection</div>
+          </div>
+        </div>
+        <div class="px-5 py-5">
+          <div class="flex items-start justify-between gap-4">
+            <div class="flex-1">
+              <div class="text-[13.5px] font-semibold">Enable extension guardrail</div>
+              <div class="text-[12px] text-slate-500 mt-1 leading-relaxed">
+                When active, all AI prompts are analyzed before sending and responses are scanned for data leakage.
+                Disabling lets all prompts through unguarded.
+              </div>
+            </div>
+            <label class="relative w-11 h-6 cursor-pointer shrink-0 mt-0.5">
+              <input type="checkbox" id="guardrailEnabled" class="sr-only peer" />
+              <span class="absolute inset-0 bg-slate-200 rounded-full transition-colors peer-checked:bg-indigo-600"></span>
+              <span class="absolute top-[3px] left-[3px] w-[18px] h-[18px] bg-white rounded-full shadow transition-transform peer-checked:translate-x-[20px]"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Auto-anonymize mode ── -->
+      <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+        <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
+          <div class="w-7 h-7 bg-emerald-50 rounded-[7px] flex items-center justify-center shrink-0">
+            <svg class="w-[13px] h-[13px] stroke-emerald-600" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/>
+              <path d="M12 8v4l3 3"/>
+            </svg>
+          </div>
+          <div>
+            <div class="text-[14px] font-bold">Auto-anonymize</div>
+            <div class="text-[12px] text-slate-500">Let the guardrail handle redaction silently</div>
+          </div>
+        </div>
+        <div class="px-5 py-5 flex flex-col gap-4">
+
+          <div class="flex items-start justify-between gap-4">
+            <div class="flex-1">
+              <div class="text-[13.5px] font-semibold">Automatic mode</div>
+              <div class="text-[12px] text-slate-500 mt-1 leading-relaxed">
+                When on, <strong>WARN</strong> and <strong>ANONYMIZE</strong> decisions are handled silently — sensitive data is
+                replaced with placeholders and the prompt is sent automatically with a brief notification.
+                <strong>BLOCK</strong> decisions always require your attention.
+              </div>
+            </div>
+            <label class="relative w-11 h-6 cursor-pointer shrink-0 mt-0.5">
+              <input type="checkbox" id="autoAnonymize" class="sr-only peer" />
+              <span class="absolute inset-0 bg-slate-200 rounded-full transition-colors peer-checked:bg-emerald-500"></span>
+              <span class="absolute top-[3px] left-[3px] w-[18px] h-[18px] bg-white rounded-full shadow transition-transform peer-checked:translate-x-[20px]"></span>
+            </label>
+          </div>
+
+          <!-- Info box -->
+          <div class="flex gap-2.5 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+            <svg class="w-4 h-4 stroke-slate-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round">
+              <circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>
+            </svg>
+            <p class="text-[11.5px] text-slate-500 leading-relaxed">
+              In auto mode, the API's precise server-side redactions are applied — not just local regex. 
+              Disable this to always review detections manually via the slide-in panel.
+            </p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── API Connection ── -->
+      <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+        <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
+          <div class="w-7 h-7 bg-indigo-50 rounded-[7px] flex items-center justify-center shrink-0">
+            <svg class="w-[13px] h-[13px] stroke-indigo-600" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="2" y1="12" x2="22" y2="12"/>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+            </svg>
+          </div>
+          <div>
+            <div class="text-[14px] font-bold">API Connection</div>
+            <div class="text-[12px] text-slate-500">Security API endpoint URL</div>
+          </div>
+        </div>
+        <div class="px-5 py-5">
+          <div class="flex gap-2">
+            <input id="apiBaseUrl" type="text" placeholder="http://localhost:8080"
+              class="flex-1 px-3 py-2 text-[12.5px] font-mono bg-slate-50 border border-slate-200 rounded-lg outline-none
+                     focus:border-indigo-500 focus:bg-white transition-colors placeholder:text-slate-400" />
+            <button id="testApiBtn" type="button"
+              class="px-3.5 py-2 text-[12px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors">
+              Test
+            </button>
+          </div>
+          <div id="apiTestResult" class="mt-2 text-[12px] font-medium text-slate-400 min-h-[18px]"></div>
+        </div>
+      </div>
+
+      <!-- ── Protected Platforms ── -->
+      <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+        <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
+          <div class="w-7 h-7 bg-indigo-50 rounded-[7px] flex items-center justify-center shrink-0">
+            <svg class="w-[13px] h-[13px] stroke-indigo-600" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+          </div>
+          <div>
+            <div class="text-[14px] font-bold">Protected Platforms</div>
+            <div class="text-[12px] text-slate-500">Enable or disable protection per AI platform</div>
+          </div>
+        </div>
+        <div class="px-5 py-5">
+          <div id="platformList" class="grid grid-cols-2 gap-2"></div>
+          <div class="flex gap-2 mt-4">
+            <button id="selectAllBtn" type="button"
+              class="px-3 py-1.5 text-[12px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors">
+              Select all
+            </button>
+            <button id="deselectAllBtn" type="button"
+              class="px-3 py-1.5 text-[12px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors">
+              Deselect all
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Custom Domains ── -->
+      <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+        <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
+          <div class="w-7 h-7 bg-indigo-50 rounded-[7px] flex items-center justify-center shrink-0">
+            <svg class="w-[13px] h-[13px] stroke-indigo-600" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+          </div>
+          <div>
+            <div class="text-[14px] font-bold">Custom Domains</div>
+            <div class="text-[12px] text-slate-500">Add internal or custom AI tools</div>
+          </div>
+        </div>
+        <div class="px-5 py-5">
+          <div class="flex gap-2">
+            <input id="customDomainInput" type="text" placeholder="teams.microsoft.com"
+              class="flex-1 px-3 py-2 text-[12.5px] bg-slate-50 border border-slate-200 rounded-lg outline-none
+                     focus:border-indigo-500 focus:bg-white transition-colors placeholder:text-slate-400" />
+            <button id="addDomainBtn" type="button"
+              class="px-4 py-2 text-[12.5px] font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-colors">
+              + Add
+            </button>
+          </div>
+          <p id="domainError" class="mt-2 text-[12px] text-red-500 font-medium min-h-[16px]"></p>
+          <div id="customDomains" class="flex flex-wrap gap-1.5 mt-3"></div>
+        </div>
+      </div>
+
+    </main>
+
+    <script src="src/siteConfigs.js"></script>
     <script src="src/options.js"></script>
   </body>
 </html>

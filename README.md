@@ -24,8 +24,10 @@ The project is split into two layers:
 2. Server security layer
    - FastAPI prompt analysis API
    - deterministic rules engine with risk score
-   - agent orchestration (LangGraph planned next)
-   - MongoDB incident storage
+   - agent orchestration via **LangGraph** (`AFE`, `AVS`, `ASI`, `AC` + optional LLM classifier)
+   - MongoDB incident storage (in-memory fallback for local dev)
+   - JWT auth + per-user settings (SaaS-ready foundation)
+   - site telemetry from the extension (`/v1/site-signals`)
    - Next.js admin dashboard
 
 ## 2) Repository Structure
@@ -67,12 +69,31 @@ confidential-Agent/
 
 ## 4) Quick Start
 
+Recommended order on a fresh machine: **MongoDB (optional) → API → dashboard → extension**.
+
 ### Prerequisites
 - Node.js 20+
 - Python 3.11 to 3.13
+- [uv](https://docs.astral.sh/uv/) (recommended for this repo; see **Alternative without uv** below)
 - Docker (optional, recommended for MongoDB)
 
-### 4.1 Run the API
+### 4.0 Environment (API)
+
+From the repo root, copy the example env file for the API:
+
+```bash
+cp services/security-api/.env.example services/security-api/.env
+# Edit services/security-api/.env as needed (Mongo URL, LLM keys, etc.)
+```
+
+### 4.1 Run MongoDB (optional)
+
+```bash
+cd infra/docker
+docker compose up -d
+```
+
+### 4.2 Run the API (recommended: uv)
 
 ```bash
 cd services/security-api
@@ -81,11 +102,19 @@ uv sync --group dev
 uv run uvicorn app.main:app --reload --port 8080
 ```
 
-### 4.2 Run MongoDB (optional)
+API docs: `http://localhost:8080/docs` · Health: `http://localhost:8080/health`
+
+### 4.2b Run the API (alternative: venv + pip)
+
+If you do not use `uv`:
 
 ```bash
-cd infra/docker
-docker compose up -d
+cd services/security-api
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -e .
+pip install pytest          # optional, for running tests
+uvicorn app.main:app --reload --port 8080
 ```
 
 ### 4.3 Install the extension in dev mode
@@ -94,6 +123,7 @@ docker compose up -d
 2. Enable "Developer mode".
 3. Click "Load unpacked".
 4. Select `apps/browser-extension`.
+5. In extension options, set **API base URL** to `http://localhost:8080` if needed.
 
 ### 4.4 Run the dashboard
 
@@ -105,22 +135,41 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-## 5) Current Capabilities
+- Home: `http://localhost:3000`
+- Incidents: `http://localhost:3000/incidents`
+- Site health (telemetry): `http://localhost:3000/site-health`
 
-This V1 currently includes:
-- a shared analysis contract,
-- a working scoring/action API,
-- an extension that intercepts prompts and calls the API,
-- a basic dashboard connected to the API,
-- step-by-step documentation in `docs/`.
+## 5) Project progress (what is implemented)
 
-Engineering standards are defined in `docs/ENGINEERING_STANDARDS.md`.
-LangGraph and workflow documentation is available in `docs/NOTION_WORKFLOW_GUIDE.md`.
+| Area | Status | Notes |
+|------|--------|--------|
+| Chrome extension (MV3) | Done (V1) | Intercept + API call + local redaction; options for API URL |
+| FastAPI `/v1/analyze` | Done | LangGraph pipeline + deterministic policy + incident logging |
+| FastAPI `/v1/validate-response` | Done | Response validation path (AVS-oriented) |
+| Agents `AFE` / `AVS` / `ASI` / `AC` | Done | Wired in `app/agents/` + `orchestrator.py` |
+| Optional LLM classifier | Optional | Env-driven; see `services/security-api/README.md` |
+| Incidents store | Done | Mongo when available; in-memory fallback |
+| Auth (`/v1/auth/*`) + user settings | Done | JWT; settings for extension targeting |
+| Site signals (`/v1/site-signals/*`) | Done | Extension → API telemetry; dashboard summary |
+| Telegram alerts | Optional | Env-driven for critical incidents |
+| Admin dashboard | In progress | Incidents + site health; auth UI may follow |
+| Tenant RBAC + enterprise policies | Planned | Next phase |
 
-## 6) Next Steps (Roadmap)
+## 6) Current capabilities (summary)
 
-1. Integrate real LangGraph orchestration (`AFE`, `AVS`, `ASI`, `AC`)
-2. Add auth + RBAC to dashboard and API
-3. Add tenant-specific policies
-4. Integrate Telegram alerting
-5. Extend support to additional platforms and IDEs
+- Shared analysis contracts in `packages/shared-types`
+- End-to-end prompt analysis with **graph trace** returned on analyze responses
+- Engineering standards: `docs/ENGINEERING_STANDARDS.md`
+- Workflow / Notion-oriented guide: `docs/NOTION_WORKFLOW_GUIDE.md`
+- Implementation guide: `docs/IMPLEMENTATION_GUIDE.md`
+- Architecture: `docs/ARCHITECTURE.md`
+
+## 7) Next steps (roadmap)
+
+1. Dashboard auth (login) aligned with API JWT + role-based access where needed
+2. Tenant-specific policies and admin UI
+3. Harden extension selectors per platform using `site-signals` feedback loop
+4. Deeper IDE / non-browser integrations (proxy or native extensions)
+5. Extended alerting and retention policies for compliance
+
+See also `services/security-api/README.md` for API env vars (LLM, Telegram, Mongo).

@@ -3,7 +3,8 @@ from pydantic import BaseModel, Field
 
 
 SecurityAction = Literal["ALLOW", "ANONYMIZE", "BLOCK", "WARN"]
-PlatformType = Literal["chatgpt", "claude", "gemini", "unknown"]
+# Open string — platform list grows as new sites are added to the extension.
+PlatformType = str
 
 
 class AnalyzeMetadata(BaseModel):
@@ -59,3 +60,24 @@ class ValidateResponseResponse(BaseModel):
     redactions: list[RedactionProposal]
     createdAt: str
     graphTrace: list[str] = Field(default_factory=list)
+
+
+# ── Image moderation ──────────────────────────────────────────────────────────
+
+class AnalyzeImageRequest(BaseModel):
+    requestId: str = Field(..., min_length=4, max_length=128)
+    platform: PlatformType = "unknown"
+    # Base64-encoded image data (client must resize to ≤ 1024px before encoding).
+    imageBase64: str = Field(..., min_length=10)
+    imageMimeType: str = Field(default="image/jpeg")
+    metadata: AnalyzeMetadata | None = None
+
+
+class AnalyzeImageResponse(BaseModel):
+    requestId: str
+    action: SecurityAction
+    riskScore: int
+    reasons: list[str]
+    # One detection per flagged category (e.g. IMAGE_SEXUAL, IMAGE_VIOLENCE).
+    detections: list[DetectionHit]
+    createdAt: str

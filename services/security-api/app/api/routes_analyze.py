@@ -1,10 +1,13 @@
 from fastapi import APIRouter
 
 from app.agents.asi import notify_critical_incident
+from app.agents.image_moderator import run_image_moderator
 from app.agents.orchestrator import analyze_prompt_with_agents, validate_response_with_agents
 from app.core.config import settings
 from app.core.incident_store import get_incident_store
 from app.schemas.analyze import (
+    AnalyzeImageRequest,
+    AnalyzeImageResponse,
     AnalyzeRequest,
     AnalyzeResponse,
     ValidateResponseRequest,
@@ -119,6 +122,47 @@ def validate_response(request: ValidateResponseRequest) -> ValidateResponseRespo
         notify_critical_incident(incident)
     except Exception:
         pass
+    return response
+
+
+@router.post("/analyze-image", response_model=AnalyzeImageResponse)
+def analyze_image(request: AnalyzeImageRequest) -> AnalyzeImageResponse:
+    """
+    Moderate an image before upload.
+    Uses OpenAI's omni-moderation-latest model to detect sexual content,
+    graphic violence, hate, self-harm, harassment, and CSAM.
+    Fails open when the API key is not configured.
+    """
+    decision = run_image_moderator(request.imageBase64, request.imageMimeType)
+    response = AnalyzeImageResponse(
+        requestId=request.requestId,
+        action=decision.action,
+        riskScore=decision.risk_score,
+        reasons=decision.reasons,
+        detections=decision.detections,
+        createdAt=decision.created_at,
+    )
+    if decision.action in {"BLOCK", "WARN"}:
+        incident = {
+            "incidentType": "IMAGE",
+            "requestId": request.requestId,
+            "platform": request.platform,
+            "action": decision.action,
+            "riskScore": decision.risk_score,
+            "reasons": decision.reasons,
+            "detections": [d for d in decision.detections],
+            "redactions": [],
+            "createdAt": decision.created_at,
+            "tenantId": request.metadata.tenantId if request.metadata else None,
+            "metadata": request.metadata.model_dump() if request.metadata else {},
+            # Never store the raw image — log only metadata.
+            "contentPreview": f"[IMAGE mime={request.imageMimeType}]",
+        }
+        try:
+            get_incident_store().save_incident(incident)
+            notify_critical_incident(incident)
+        except Exception:
+            pass
     return response
 
 

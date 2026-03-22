@@ -62,21 +62,11 @@ class InMemoryUserStore:
 
     def get_user_settings(self, user_id: str) -> dict:
         if user_id not in self.settings_by_user:
-            return {
-                "guardrailEnabled": True,
-                "enabledPlatformIds": [],
-                "customDomains": [],
-                "updatedAt": datetime.now(timezone.utc).isoformat(),
-            }
+            return _default_settings()
         return dict(self.settings_by_user[user_id])
 
     def upsert_user_settings(self, user_id: str, payload: dict) -> dict:
-        settings_obj = {
-            "guardrailEnabled": bool(payload.get("guardrailEnabled", True)),
-            "enabledPlatformIds": list(payload.get("enabledPlatformIds", [])),
-            "customDomains": list(payload.get("customDomains", [])),
-            "updatedAt": datetime.now(timezone.utc).isoformat(),
-        }
+        settings_obj = _build_settings_obj(payload)
         self.settings_by_user[user_id] = settings_obj
         return dict(settings_obj)
 
@@ -115,25 +105,45 @@ class MongoUserStore:
 
     def get_user_settings(self, user_id: str) -> dict:
         settings_obj = self.user_settings.find_one({"userId": user_id}, {"_id": 0, "userId": 0})
-        if settings_obj:
-            return dict(settings_obj)
-        return {
-            "guardrailEnabled": True,
-            "enabledPlatformIds": [],
-            "customDomains": [],
-            "updatedAt": datetime.now(timezone.utc).isoformat(),
-        }
+        return dict(settings_obj) if settings_obj else _default_settings()
 
     def upsert_user_settings(self, user_id: str, payload: dict) -> dict:
-        settings_obj = {
-            "userId": user_id,
-            "guardrailEnabled": bool(payload.get("guardrailEnabled", True)),
-            "enabledPlatformIds": list(payload.get("enabledPlatformIds", [])),
-            "customDomains": list(payload.get("customDomains", [])),
-            "updatedAt": datetime.now(timezone.utc).isoformat(),
-        }
+        settings_obj = {"userId": user_id, **_build_settings_obj(payload)}
         self.user_settings.update_one({"userId": user_id}, {"$set": settings_obj}, upsert=True)
         return {k: v for k, v in settings_obj.items() if k != "userId"}
+
+
+def _default_settings() -> dict:
+    return {
+        "guardrailEnabled": True,
+        "autoAnonymize": False,
+        "imageModerationEnabled": True,
+        "enabledPlatformIds": [],
+        "customDomains": [],
+        "userAddedPlatforms": [],
+        "updatedAt": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _build_settings_obj(payload: dict) -> dict:
+    return {
+        "guardrailEnabled": bool(payload.get("guardrailEnabled", True)),
+        "autoAnonymize": bool(payload.get("autoAnonymize", False)),
+        "imageModerationEnabled": bool(payload.get("imageModerationEnabled", True)),
+        "enabledPlatformIds": list(payload.get("enabledPlatformIds", [])),
+        "customDomains": list(payload.get("customDomains", [])),
+        "userAddedPlatforms": [
+            {
+                "id": str(p.get("id", "")),
+                "label": str(p.get("label", "")),
+                "domain": str(p.get("domain", "")),
+                "features": list(p.get("features", ["textAnalysis", "imageModeration"])),
+            }
+            for p in payload.get("userAddedPlatforms", [])
+            if p.get("domain")
+        ],
+        "updatedAt": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 _user_store: UserStore | None = None

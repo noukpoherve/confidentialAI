@@ -46,6 +46,50 @@
   let manualWarnBypassHash = null;
   const sentSiteSignals = new Set();
 
+  // ── Blocked-image state ──────────────────────────────────────────────────
+  // Set to true when image moderation returns BLOCK so that the Post/Send
+  // button is intercepted even if the user bypasses the modal.
+  let blockedImagePending = false;
+  let pendingBlockBanner = null;
+
+  function clearBlockedImagePending() {
+    blockedImagePending = false;
+    if (pendingBlockBanner) {
+      pendingBlockBanner.remove();
+      pendingBlockBanner = null;
+    }
+  }
+
+  function showBlockedImageBanner() {
+    if (pendingBlockBanner) return;
+    const banner = document.createElement("div");
+    banner.dataset.confidentialAgentBlockBanner = "true";
+    Object.assign(banner.style, {
+      position: "fixed", top: "0", left: "0", right: "0", zIndex: "2147483646",
+      background: "#dc2626", color: "#fff",
+      padding: "11px 20px",
+      display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px",
+      fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif",
+      fontSize: "13px", fontWeight: "600",
+      boxShadow: "0 2px 12px rgba(220,38,38,0.4)",
+      animation: "ca-slide-in 0.2s ease",
+    });
+    const msg = Object.assign(document.createElement("span"), {
+      textContent: "🚫  Blocked image detected — remove the image from your post before sending.",
+    });
+    const dismissBtn = document.createElement("button");
+    dismissBtn.textContent = "I've removed it ✓";
+    Object.assign(dismissBtn.style, {
+      background: "rgba(255,255,255,0.18)", border: "1.5px solid rgba(255,255,255,0.55)",
+      color: "#fff", padding: "5px 14px", borderRadius: "7px",
+      cursor: "pointer", fontWeight: "700", fontSize: "12px", flexShrink: "0",
+    });
+    dismissBtn.addEventListener("click", clearBlockedImagePending);
+    banner.append(msg, dismissBtn);
+    document.body.prepend(banner);
+    pendingBlockBanner = banner;
+  }
+
   function getActiveSiteConfig() {
     return currentSiteConfig;
   }
@@ -107,7 +151,15 @@
     const selectors = Array.isArray(cfg.sendButtonSelectors) ? cfg.sendButtonSelectors : [];
     for (const selector of selectors) {
       const matched = target.closest(selector);
-      if (matched instanceof HTMLButtonElement) return true;
+      // Accept <button> elements and elements acting as buttons via role/aria.
+      if (
+        matched instanceof HTMLButtonElement ||
+        (matched instanceof HTMLElement &&
+          (matched.getAttribute("role") === "button" ||
+           matched.tagName === "DIV" && matched.getAttribute("aria-label")))
+      ) {
+        return true;
+      }
     }
 
     const text = (target.textContent || "").trim();
@@ -849,6 +901,441 @@
     }
   }
 
+  // ── Image moderation ────────────────────────────────────────────────────────
+
+  /**
+   * Convert an image File to a base64 string after resizing to ≤ maxPx on
+   * the longest side.  Smaller images keep their original size.
+   * Always outputs JPEG to normalize the mime type and reduce payload size.
+   */
+  function resizeAndEncodeImage(file, maxPx = 1024) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        let { width, height } = img;
+        if (width > maxPx || height > maxPx) {
+          const ratio = Math.min(maxPx / width, maxPx / height);
+          width = Math.floor(width * ratio);
+          height = Math.floor(height * ratio);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+        resolve({ base64: dataUrl.split(",")[1], mimeType: "image/jpeg" });
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error("Could not load image for moderation."));
+      };
+      img.src = objectUrl;
+    });
+  }
+
+  /**
+   * Clear a file input safely across browsers.
+   * Setting .value = "" works for inputs without the `multiple` attribute;
+   * DataTransfer is the standard way to clear the files list.
+   */
+  function clearFileInput(input) {
+    try {
+      input.files = new DataTransfer().files;
+    } catch {
+      // Fallback for browsers that don't support DataTransfer assignment.
+      input.value = "";
+    }
+  }
+
+  /**
+   * Show a professional image moderation result modal.
+   *
+   * BLOCK → modal with blurred preview, flagged categories, no override.
+   * WARN  → same modal but with "Send anyway" escape hatch.
+   *
+   * Returns a Promise<boolean>:
+   *   - true  = user chose to proceed (WARN only)
+   *   - false = user cancelled or action is BLOCK
+   */
+  function showImageModerationModal(decision, fileName, previewObjectUrl) {
+    return new Promise((resolve) => {
+      const isBlock = decision.action === "BLOCK";
+
+      const overlay = document.createElement("div");
+      Object.assign(overlay.style, {
+        position: "fixed", inset: "0", zIndex: "2147483647",
+        background: "rgba(15,23,42,0.65)",
+        backdropFilter: "blur(4px)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif",
+        animation: "ca-fade-in 0.18s ease",
+      });
+
+      const card = document.createElement("div");
+      Object.assign(card.style, {
+        background: "#fff", borderRadius: "16px",
+        boxShadow: "0 24px 60px rgba(0,0,0,0.25)",
+        width: "min(440px, calc(100vw - 32px))",
+        overflow: "hidden",
+        animation: "ca-slide-in 0.22s cubic-bezier(0.34,1.56,0.64,1) forwards",
+      });
+
+      // ── Header ─────────────────────────────────────────────────────────────
+      const headerBg = isBlock ? "#fef2f2" : "#fffbeb";
+      const headerBorder = isBlock ? "#fca5a5" : "#fde68a";
+      const header = document.createElement("div");
+      Object.assign(header.style, {
+        padding: "16px 20px 14px",
+        background: headerBg,
+        borderBottom: `1.5px solid ${headerBorder}`,
+        display: "flex", alignItems: "center", gap: "12px",
+      });
+      const logoWrap = document.createElement("div");
+      Object.assign(logoWrap.style, {
+        width: "36px", height: "36px", borderRadius: "10px",
+        background: isBlock ? "#ef4444" : "#f59e0b",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        flexShrink: "0",
+      });
+      logoWrap.textContent = "🛡";
+      logoWrap.style.fontSize = "18px";
+      const titleWrap = document.createElement("div");
+      const titleEl = Object.assign(document.createElement("div"), {
+        textContent: isBlock ? "Image blocked" : "Sensitive image detected",
+      });
+      Object.assign(titleEl.style, {
+        fontWeight: "700", fontSize: "15px",
+        color: isBlock ? "#991b1b" : "#92400e",
+      });
+      const subtitleEl = Object.assign(document.createElement("div"), {
+        textContent: "Confidential Agent",
+      });
+      Object.assign(subtitleEl.style, {
+        fontSize: "11px", color: "#94a3b8", marginTop: "1px",
+      });
+      titleWrap.append(titleEl, subtitleEl);
+      header.append(logoWrap, titleWrap);
+
+      // ── Body ───────────────────────────────────────────────────────────────
+      const body = document.createElement("div");
+      body.style.padding = "18px 20px 20px";
+
+      // Image preview (blurred) + filename
+      if (previewObjectUrl) {
+        const previewRow = document.createElement("div");
+        Object.assign(previewRow.style, {
+          display: "flex", alignItems: "center", gap: "14px",
+          marginBottom: "14px",
+        });
+        const imgEl = document.createElement("img");
+        imgEl.src = previewObjectUrl;
+        Object.assign(imgEl.style, {
+          width: "72px", height: "72px", borderRadius: "10px",
+          objectFit: "cover", flexShrink: "0",
+          filter: "blur(8px)",
+          border: "1.5px solid #e2e8f0",
+        });
+        const fileInfo = document.createElement("div");
+        const fileNameEl = Object.assign(document.createElement("div"), {
+          textContent: fileName || "image",
+        });
+        Object.assign(fileNameEl.style, {
+          fontWeight: "600", fontSize: "13px", color: "#1e293b",
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          maxWidth: "220px",
+        });
+        const statusEl = Object.assign(document.createElement("div"), {
+          textContent: isBlock
+            ? "Upload prevented — content policy violation"
+            : "Potentially violates content policy",
+        });
+        Object.assign(statusEl.style, {
+          fontSize: "12px", color: "#64748b", marginTop: "4px", lineHeight: "1.4",
+        });
+        fileInfo.append(fileNameEl, statusEl);
+        previewRow.append(imgEl, fileInfo);
+        body.appendChild(previewRow);
+      }
+
+      // Detection pills
+      const pillsLabel = Object.assign(document.createElement("div"), {
+        textContent: "Detected content",
+      });
+      Object.assign(pillsLabel.style, {
+        fontSize: "10px", fontWeight: "700", color: "#64748b",
+        textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px",
+      });
+      body.appendChild(pillsLabel);
+
+      const pillsWrap = document.createElement("div");
+      Object.assign(pillsWrap.style, {
+        display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "14px",
+      });
+      const categoryIcons = {
+        IMAGE_SEXUAL: "🔞",
+        IMAGE_SEXUAL_MINORS: "🚫",
+        IMAGE_VIOLENCE: "⚠️",
+        IMAGE_VIOLENCE_GRAPHIC: "🩸",
+        IMAGE_SELF_HARM: "🆘",
+        IMAGE_HATE: "⛔",
+        IMAGE_HARASSMENT: "🚨",
+        IMAGE_ILLICIT: "🔒",
+      };
+      for (const d of (decision.detections || [])) {
+        const pill = document.createElement("div");
+        const icon = categoryIcons[d.type] || "⚠️";
+        const pct = Math.round((d.confidence || 0) * 100);
+        pill.textContent = `${icon} ${d.valuePreview} ${pct}%`;
+        Object.assign(pill.style, {
+          background: isBlock ? "#fef2f2" : "#fffbeb",
+          border: `1px solid ${isBlock ? "#fca5a5" : "#fde68a"}`,
+          color: isBlock ? "#991b1b" : "#92400e",
+          borderRadius: "99px", padding: "3px 10px",
+          fontSize: "11px", fontWeight: "600",
+        });
+        pillsWrap.appendChild(pill);
+      }
+      body.appendChild(pillsWrap);
+
+      // Description
+      const desc = Object.assign(document.createElement("div"), {
+        textContent: isBlock
+          ? "This image cannot be uploaded. It contains content that violates safety policies."
+          : "This image may contain sensitive content. Uploading could violate platform policies.",
+      });
+      Object.assign(desc.style, {
+        fontSize: "13px", color: "#475569", lineHeight: "1.5",
+        marginBottom: "18px",
+      });
+      body.appendChild(desc);
+
+      // Action buttons
+      const btnRow = document.createElement("div");
+      Object.assign(btnRow.style, {
+        display: "flex", gap: "10px", justifyContent: "flex-end",
+      });
+
+      function mkBtn(text, variant) {
+        const btn = document.createElement("button");
+        btn.textContent = text;
+        const styles = {
+          block: {
+            background: "#ef4444", color: "#fff", border: "none",
+            padding: "8px 18px", borderRadius: "8px", fontWeight: "600",
+            fontSize: "13px", cursor: "pointer",
+          },
+          warn: {
+            background: "#f59e0b", color: "#fff", border: "none",
+            padding: "8px 18px", borderRadius: "8px", fontWeight: "600",
+            fontSize: "13px", cursor: "pointer",
+          },
+          ghost: {
+            background: "transparent", color: "#64748b",
+            border: "1.5px solid #e2e8f0",
+            padding: "8px 18px", borderRadius: "8px", fontWeight: "500",
+            fontSize: "13px", cursor: "pointer",
+          },
+        };
+        Object.assign(btn.style, styles[variant] || styles.ghost);
+        return btn;
+      }
+
+      const cleanup = (proceed) => {
+        if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+        overlay.remove();
+        resolve(proceed);
+      };
+
+      if (isBlock) {
+        const okBtn = mkBtn("Remove image", "block");
+        okBtn.addEventListener("click", () => cleanup(false));
+        btnRow.appendChild(okBtn);
+      } else {
+        const cancelBtn = mkBtn("Cancel", "ghost");
+        const proceedBtn = mkBtn("Send anyway ⚠️", "warn");
+        cancelBtn.addEventListener("click", () => cleanup(false));
+        proceedBtn.addEventListener("click", () => cleanup(true));
+        btnRow.append(cancelBtn, proceedBtn);
+      }
+
+      body.appendChild(btnRow);
+      card.append(header, body);
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+
+      // Close on backdrop click (WARN only — BLOCK must read the modal).
+      if (!isBlock) {
+        overlay.addEventListener("click", (e) => {
+          if (e.target === overlay) cleanup(false);
+        });
+      }
+    });
+  }
+
+  /**
+   * Analyze an image file and enforce the moderation decision.
+   * Called on every image attached via file input or clipboard paste.
+   */
+  async function getImageModerationSetting() {
+    try {
+      const data = await chrome.storage.sync.get(["imageModerationEnabled"]);
+      return data.imageModerationEnabled !== false; // default on
+    } catch {
+      return true;
+    }
+  }
+
+  async function moderateImageFile(file, inputElement) {
+    const cfg = getActiveSiteConfig();
+    if (!cfg) return;
+    if (!(cfg.features || []).includes("imageModeration")) return;
+    if (extensionContextInvalid) return;
+
+    const imageModEnabled = await getImageModerationSetting();
+    if (!imageModEnabled) return;
+
+    // Only process image files.
+    if (!file || !file.type.startsWith("image/")) return;
+
+    // Create a preview URL BEFORE we potentially clear the input.
+    const previewObjectUrl = URL.createObjectURL(file);
+
+    let encoded;
+    try {
+      encoded = await resizeAndEncodeImage(file);
+    } catch {
+      URL.revokeObjectURL(previewObjectUrl);
+      return; // If we can't read the image, fail-open.
+    }
+
+    const toastId = `img-analyzing-${Date.now()}`;
+    showToast(`Analyzing image…`, "info");
+
+    const result = await safeSendMessage({
+      type: "ANALYZE_IMAGE",
+      payload: {
+        requestId: `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        platform: cfg.id,
+        imageBase64: encoded.base64,
+        imageMimeType: encoded.mimeType,
+        metadata: { pageUrl: window.location.href },
+      },
+    });
+
+    if (!result?.ok) {
+      URL.revokeObjectURL(previewObjectUrl);
+      return; // API unavailable — fail-open.
+    }
+
+    const decision = result.data;
+    if (decision.action === "ALLOW") {
+      URL.revokeObjectURL(previewObjectUrl);
+      return;
+    }
+
+    // Show modal with blurred preview.
+    const proceed = await showImageModerationModal(decision, file.name, previewObjectUrl);
+
+    if (!proceed) {
+      clearFileInput(inputElement);
+
+      if (decision.action === "BLOCK") {
+        // Even though the file input is cleared, React-based platforms (Facebook,
+        // Instagram, etc.) may have already accepted the file. Keep the send button
+        // gated until the user confirms they have removed the image preview.
+        blockedImagePending = true;
+        showBlockedImageBanner();
+      }
+    }
+    // If proceed=true (WARN and user chose to continue), the file stays in the input.
+  }
+
+  /**
+   * Wire up image interception via file input change events.
+   * Uses capture phase so we can inspect files before any platform handler runs.
+   */
+  function interceptImageUploads() {
+    document.addEventListener(
+      "change",
+      async (event) => {
+        const input = event.target;
+        if (!(input instanceof HTMLInputElement) || input.type !== "file") return;
+        const cfg = getActiveSiteConfig();
+        if (!cfg || !(cfg.features || []).includes("imageModeration")) return;
+
+        const files = Array.from(input.files || []).filter((f) =>
+          f.type.startsWith("image/")
+        );
+        // If the user selected new files, clear any previous block state —
+        // the new files will be analysed and a new block set if necessary.
+        if (files.length > 0 && blockedImagePending) {
+          clearBlockedImagePending();
+        }
+        // An empty change (user cancelled the picker) means they removed the image.
+        if (files.length === 0 && blockedImagePending) {
+          clearBlockedImagePending();
+        }
+        // Process images sequentially to avoid race conditions on the same input.
+        for (const file of files) {
+          await moderateImageFile(file, input);
+        }
+      },
+      true // capture phase
+    );
+
+    // Clipboard paste (Ctrl+V / Cmd+V with an image in clipboard).
+    document.addEventListener(
+      "paste",
+      async (event) => {
+        const cfg = getActiveSiteConfig();
+        if (!cfg || !(cfg.features || []).includes("imageModeration")) return;
+
+        const items = Array.from(event.clipboardData?.items || []);
+        const imageItems = items.filter((i) => i.type.startsWith("image/"));
+        for (const item of imageItems) {
+          const file = item.getAsFile();
+          if (!file) continue;
+          // For paste, we can't "clear" the clipboard data directly.
+          // We show the modal; if BLOCK or user cancels, we show a toast.
+          const previewObjectUrl = URL.createObjectURL(file);
+          let encoded;
+          try {
+            encoded = await resizeAndEncodeImage(file);
+          } catch {
+            URL.revokeObjectURL(previewObjectUrl);
+            continue;
+          }
+          showToast("Analyzing pasted image…", "info");
+          const result = await safeSendMessage({
+            type: "ANALYZE_IMAGE",
+            payload: {
+              requestId: `img-paste-${Date.now()}`,
+              platform: cfg.id,
+              imageBase64: encoded.base64,
+              imageMimeType: encoded.mimeType,
+              metadata: { pageUrl: window.location.href },
+            },
+          });
+          if (!result?.ok) { URL.revokeObjectURL(previewObjectUrl); continue; }
+          const decision = result.data;
+          if (decision.action === "ALLOW") { URL.revokeObjectURL(previewObjectUrl); continue; }
+          // Show modal — if not proceeding we can't undo the paste, so we warn
+          // and show a toast so the user knows to delete the pasted image manually.
+          const proceed = await showImageModerationModal(decision, "pasted image", previewObjectUrl);
+          if (!proceed) {
+            showToast(
+              "Image flagged — please remove it from the chat before sending.",
+              "warning"
+            );
+          }
+        }
+      },
+      true
+    );
+  }
+
   function replaySubmission() {
     const promptElement = getPromptElement();
     const promptForm = promptElement instanceof HTMLElement ? promptElement.closest("form") : null;
@@ -882,10 +1369,17 @@
   async function analyzeAndMaybeBlock(event) {
     const cfg = getActiveSiteConfig();
     if (!cfg) return;
-    if (extensionContextInvalid) {
-      return;
-    }
-    if (replayingSubmission) {
+    if (extensionContextInvalid) return;
+    if (replayingSubmission) return;
+
+    // ── Blocked-image gate ───────────────────────────────────────────────────
+    // A previous image moderation returned BLOCK. Prevent ANY post/send action
+    // until the user explicitly acknowledges they removed the image.
+    if (blockedImagePending) {
+      event.preventDefault();
+      event.stopPropagation();
+      showBlockedImageBanner(); // ensure banner is visible
+      showToast("🚫 Remove the blocked image before posting.", "warning");
       return;
     }
 
@@ -1216,6 +1710,9 @@
     },
     true
   );
+
+  // Start image upload interception (file inputs + clipboard paste).
+  interceptImageUploads();
 
   domObserver = new MutationObserver(() => {
     scheduleResponseScan();

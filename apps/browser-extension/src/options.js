@@ -1,5 +1,5 @@
 const DEFAULT_API_BASE_URL = "http://localhost:8080";
-const SETTINGS_KEYS = ["apiBaseUrl", "guardrailEnabled", "autoAnonymize", "enabledPlatformIds", "customDomains"];
+const SETTINGS_KEYS = ["apiBaseUrl", "guardrailEnabled", "autoAnonymize", "imageModerationEnabled", "enabledPlatformIds", "customDomains"];
 
 function getSiteConfigApi() {
   return window.ConfidentialAgentSiteConfigs;
@@ -53,10 +53,18 @@ function renderPlatforms(enabledIds) {
     }
 
     const lbl = document.createElement("span");
-    lbl.className = `text-[12px] font-semibold ${isChecked ? "text-indigo-700" : "text-slate-700"}`;
+    lbl.className = `text-[12px] font-semibold ${isChecked ? "text-indigo-700" : "text-slate-700"} flex-1`;
     lbl.textContent = platform.label || platform.id;
 
-    item.append(cb, dot, lbl);
+    // Badge: "Social" for social media platforms (image-only).
+    const badge = platform.type === "social" ? (() => {
+      const b = document.createElement("span");
+      b.textContent = "IMG";
+      b.className = "text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-600 border border-rose-200 shrink-0";
+      return b;
+    })() : null;
+
+    item.append(cb, dot, lbl, ...(badge ? [badge] : []));
 
     cb.addEventListener("change", () => {
       const checked = cb.checked;
@@ -191,6 +199,7 @@ async function restore() {
   const field = document.getElementById("apiBaseUrl");
   const guardrailToggle = document.getElementById("guardrailEnabled");
   const autoAnonymizeToggle = document.getElementById("autoAnonymize");
+  const imageModerationToggle = document.getElementById("imageModerationEnabled");
   const api = getSiteConfigApi();
   if (!field || !guardrailToggle || !api) return;
 
@@ -206,6 +215,8 @@ async function restore() {
   field.value = data.apiBaseUrl || DEFAULT_API_BASE_URL;
   guardrailToggle.checked = data.guardrailEnabled !== false;
   if (autoAnonymizeToggle) autoAnonymizeToggle.checked = data.autoAnonymize === true;
+  // Image moderation is enabled by default.
+  if (imageModerationToggle) imageModerationToggle.checked = data.imageModerationEnabled !== false;
   renderPlatforms(enabledPlatformIds);
   renderCustomDomains(customDomains);
 }
@@ -214,6 +225,7 @@ async function save() {
   const field = document.getElementById("apiBaseUrl");
   const guardrailToggle = document.getElementById("guardrailEnabled");
   const autoAnonymizeToggle = document.getElementById("autoAnonymize");
+  const imageModerationToggle = document.getElementById("imageModerationEnabled");
   if (!field || !guardrailToggle) return;
 
   const value = String(field.value || "").trim();
@@ -229,6 +241,7 @@ async function save() {
     apiBaseUrl: value,
     guardrailEnabled: guardrailToggle.checked,
     autoAnonymize: autoAnonymizeToggle ? autoAnonymizeToggle.checked : false,
+    imageModerationEnabled: imageModerationToggle ? imageModerationToggle.checked : true,
     enabledPlatformIds,
     customDomains,
   });

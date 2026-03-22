@@ -20,8 +20,9 @@ async function incrementStats(action) {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   const routeByType = {
-    ANALYZE_PROMPT: "/v1/analyze",
+    ANALYZE_PROMPT:   "/v1/analyze",
     ANALYZE_RESPONSE: "/v1/validate-response",
+    ANALYZE_IMAGE:    "/v1/analyze-image",
     SIGNAL_SITE_ISSUE: "/v1/site-signals",
   };
   const route = routeByType[message?.type];

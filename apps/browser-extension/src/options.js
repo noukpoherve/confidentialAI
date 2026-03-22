@@ -1,286 +1,428 @@
-const DEFAULT_API_BASE_URL = "http://localhost:8080";
-const SETTINGS_KEYS = ["apiBaseUrl", "guardrailEnabled", "autoAnonymize", "imageModerationEnabled", "enabledPlatformIds", "customDomains"];
+/**
+ * Options page logic.
+ *
+ * Responsibilities:
+ * 1. Authentication (login / signup / logout) via the background proxy.
+ * 2. Load settings from local chrome.storage.sync (always) + from server (when authenticated).
+ * 3. Save settings to chrome.storage.sync (always) + to server (when authenticated).
+ * 4. Render built-in platforms grouped by type (AI / social).
+ * 5. Manage user-added platforms (add / delete) with per-platform feature flags.
+ */
 
-function getSiteConfigApi() {
-  return window.ConfidentialAgentSiteConfigs;
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const SETTINGS_KEYS = [
+  "apiBaseUrl",
+  "guardrailEnabled",
+  "autoAnonymize",
+  "imageModerationEnabled",
+  "enabledPlatformIds",
+  "customDomains",        // legacy
+  "userAddedPlatforms",   // per-user, server-synced
+];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function $(id) { return document.getElementById(id); }
+
+/** Call the API through the background service worker (avoids CORS issues). */
+async function apiCall({ method = "GET", path, body, useToken = true }) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      { type: "API_CALL", payload: { method, path, body, useToken } },
+      (response) => resolve(response || { ok: false, error: "No response" })
+    );
+  });
 }
 
-function normalizeDomain(domain) {
-  const api = getSiteConfigApi();
-  if (api?.normalizeDomain) return api.normalizeDomain(domain);
-  return String(domain || "")
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, "")
-    .replace(/\/.*$/, "")
-    .replace(/^www\./, "");
+// ── Toast / notice ────────────────────────────────────────────────────────────
+
+function showNotice(text, isError = false) {
+  const el = $("saveNotice");
+  const textEl = $("saveNoticeText");
+  if (!el || !textEl) return;
+  textEl.textContent = text;
+  el.classList.toggle("bg-red-700", isError);
+  el.classList.toggle("bg-slate-900", !isError);
+  el.classList.remove("opacity-0");
+  el.classList.add("opacity-100");
+  clearTimeout(el._hideTimer);
+  el._hideTimer = setTimeout(() => {
+    el.classList.remove("opacity-100");
+    el.classList.add("opacity-0");
+  }, 2400);
 }
 
-// ── Platforms ──────────────────────────────────────────────────────────────
+// ── Auth state ────────────────────────────────────────────────────────────────
+
+let authState = { token: null, email: null };
+
+async function loadAuthState() {
+  const data = await chrome.storage.local.get(["authToken", "authEmail"]);
+  authState.token = data.authToken || null;
+  authState.email = data.authEmail || null;
+}
+
+async function persistAuthState(token, email) {
+  authState.token = token;
+  authState.email = email;
+  await chrome.storage.local.set({ authToken: token, authEmail: email });
+  // Also tell background.js (so it updates its in-memory token immediately).
+  await new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "SET_AUTH_TOKEN", token }, resolve);
+  });
+}
+
+async function clearAuthStateStorage() {
+  authState = { token: null, email: null };
+  await chrome.storage.local.remove(["authToken", "authEmail"]);
+  await new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "CLEAR_AUTH_TOKEN" }, resolve);
+  });
+}
+
+function renderAuthUI() {
+  const formArea = $("authFormArea");
+  const loggedInArea = $("authLoggedInArea");
+  const emailEl = $("authUserEmail");
+  const badge = $("authRequiredBadge");
+
+  if (authState.token) {
+    formArea?.classList.add("hidden");
+    loggedInArea?.classList.remove("hidden");
+    if (emailEl) emailEl.textContent = authState.email || "";
+    if (badge) badge.classList.add("hidden");
+  } else {
+    formArea?.classList.remove("hidden");
+    loggedInArea?.classList.add("hidden");
+    if (badge) badge.classList.remove("hidden");
+  }
+}
+
+async function doAuthRequest(endpoint) {
+  const email = $("authEmail")?.value.trim();
+  const password = $("authPassword")?.value;
+  const errorEl = $("authError");
+
+  if (!email || !password) {
+    if (errorEl) { errorEl.textContent = "Please fill in email and password."; errorEl.classList.remove("hidden"); }
+    return;
+  }
+  if (errorEl) errorEl.classList.add("hidden");
+
+  const res = await apiCall({
+    method: "POST",
+    path: endpoint,
+    body: { email, password },
+    useToken: false,
+  });
+
+  if (!res.ok) {
+    const msg = res.data?.detail || res.error || "Authentication failed.";
+    if (errorEl) { errorEl.textContent = msg; errorEl.classList.remove("hidden"); }
+    return;
+  }
+
+  await persistAuthState(res.data.accessToken, res.data.user?.email || email);
+  renderAuthUI();
+
+  // After login, pull server settings and merge into local storage.
+  await syncSettingsFromServer();
+  await restore();
+  showNotice("Logged in. Settings synced from your account.");
+}
+
+async function doLogout() {
+  await clearAuthStateStorage();
+  renderAuthUI();
+  showNotice("Logged out.");
+}
+
+// ── Server settings sync ──────────────────────────────────────────────────────
+
+/** Pull server settings and write them into chrome.storage.sync. */
+async function syncSettingsFromServer() {
+  if (!authState.token) return;
+  const res = await apiCall({ method: "GET", path: "/v1/users/me/settings" });
+  if (!res.ok) return;
+
+  const s = res.data;
+  const patch = {};
+  if (typeof s.guardrailEnabled === "boolean") patch.guardrailEnabled = s.guardrailEnabled;
+  if (typeof s.autoAnonymize === "boolean") patch.autoAnonymize = s.autoAnonymize;
+  if (typeof s.imageModerationEnabled === "boolean") patch.imageModerationEnabled = s.imageModerationEnabled;
+  if (Array.isArray(s.enabledPlatformIds)) patch.enabledPlatformIds = s.enabledPlatformIds;
+  if (Array.isArray(s.customDomains)) patch.customDomains = s.customDomains;
+  if (Array.isArray(s.userAddedPlatforms)) patch.userAddedPlatforms = s.userAddedPlatforms;
+
+  await chrome.storage.sync.set(patch);
+}
+
+/** Push current local settings to the server (called on Save when logged in). */
+async function syncSettingsToServer(payload) {
+  if (!authState.token) return;
+  await apiCall({
+    method: "PUT",
+    path: "/v1/users/me/settings",
+    body: payload,
+  });
+}
+
+// ── Platform rendering ────────────────────────────────────────────────────────
+
+let enabledPlatformIds = [];
 
 function renderPlatforms(enabledIds) {
-  const list = document.getElementById("platformList");
-  const api = getSiteConfigApi();
-  if (!list || !api) return;
+  enabledPlatformIds = Array.isArray(enabledIds) ? enabledIds : [];
 
-  list.innerHTML = "";
-  for (const platform of api.SITE_CONFIGS) {
-    const isChecked = enabledIds.includes(platform.id);
+  const aiContainer = $("platformsAI");
+  const socialContainer = $("platformsSocial");
+  if (!aiContainer || !socialContainer) return;
 
+  aiContainer.innerHTML = "";
+  socialContainer.innerHTML = "";
+
+  const siteConfigs = window.ConfidentialAgentSiteConfigs?.SITE_CONFIGS || [];
+  for (const platform of siteConfigs) {
+    const isChecked = enabledPlatformIds.length === 0 || enabledPlatformIds.includes(platform.id);
     const item = document.createElement("label");
-    item.htmlFor = `plat-${platform.id}`;
-    item.className = [
-      "flex items-center gap-2.5 p-2.5 rounded-xl border-[1.5px] cursor-pointer transition-all duration-150",
-      isChecked
-        ? "bg-indigo-50 border-indigo-400 text-indigo-700"
-        : "bg-slate-50 border-slate-200 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50/40",
-    ].join(" ");
+    item.className = `flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer select-none transition-colors ${
+      isChecked ? "bg-indigo-50 border border-indigo-200" : "bg-slate-50 border border-slate-100 hover:bg-slate-100"
+    }`;
 
     const cb = document.createElement("input");
     cb.type = "checkbox";
-    cb.id = `plat-${platform.id}`;
-    cb.dataset.platformId = platform.id;
+    cb.value = platform.id;
     cb.checked = isChecked;
-    cb.className = "sr-only";
-
-    const dot = document.createElement("div");
-    dot.className = isChecked
-      ? "w-4 h-4 rounded-[4px] bg-indigo-600 flex items-center justify-center shrink-0"
-      : "w-4 h-4 rounded-[4px] bg-white border-[1.5px] border-slate-300 shrink-0";
-
-    if (isChecked) {
-      dot.innerHTML = `<svg viewBox="0 0 12 12" class="w-2.5 h-2.5" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 6 5 9 10 3"/></svg>`;
-    }
-
-    const lbl = document.createElement("span");
-    lbl.className = `text-[12px] font-semibold ${isChecked ? "text-indigo-700" : "text-slate-700"} flex-1`;
-    lbl.textContent = platform.label || platform.id;
-
-    // Badge: "Social" for social media platforms (image-only).
-    const badge = platform.type === "social" ? (() => {
-      const b = document.createElement("span");
-      b.textContent = "IMG";
-      b.className = "text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-600 border border-rose-200 shrink-0";
-      return b;
-    })() : null;
-
-    item.append(cb, dot, lbl, ...(badge ? [badge] : []));
-
+    cb.className = "w-3.5 h-3.5 accent-indigo-600 cursor-pointer shrink-0";
     cb.addEventListener("change", () => {
-      const checked = cb.checked;
-      item.className = [
-        "flex items-center gap-2.5 p-2.5 rounded-xl border-[1.5px] cursor-pointer transition-all duration-150",
-        checked
-          ? "bg-indigo-50 border-indigo-400 text-indigo-700"
-          : "bg-slate-50 border-slate-200 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50/40",
-      ].join(" ");
-      dot.className = checked
-        ? "w-4 h-4 rounded-[4px] bg-indigo-600 flex items-center justify-center shrink-0"
-        : "w-4 h-4 rounded-[4px] bg-white border-[1.5px] border-slate-300 shrink-0";
-      dot.innerHTML = checked
-        ? `<svg viewBox="0 0 12 12" class="w-2.5 h-2.5" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 6 5 9 10 3"/></svg>`
-        : "";
-      lbl.className = `text-[12px] font-semibold ${checked ? "text-indigo-700" : "text-slate-700"}`;
+      if (cb.checked) {
+        if (!enabledPlatformIds.includes(platform.id)) enabledPlatformIds.push(platform.id);
+      } else {
+        enabledPlatformIds = enabledPlatformIds.filter((id) => id !== platform.id);
+      }
+      item.className = `flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer select-none transition-colors ${
+        cb.checked ? "bg-indigo-50 border border-indigo-200" : "bg-slate-50 border border-slate-100 hover:bg-slate-100"
+      }`;
     });
 
-    list.appendChild(item);
+    const dot = document.createElement("span");
+    dot.className = `w-1.5 h-1.5 rounded-full shrink-0 ${isChecked ? "bg-indigo-500" : "bg-slate-300"}`;
+
+    const lbl = document.createElement("span");
+    lbl.className = `text-[12px] font-semibold flex-1 ${isChecked ? "text-indigo-700" : "text-slate-700"}`;
+    lbl.textContent = platform.label || platform.id;
+
+    // Feature badges
+    const badges = document.createElement("div");
+    badges.className = "flex gap-1 shrink-0";
+    if (platform.features?.includes("imageModeration")) {
+      const b = document.createElement("span");
+      b.textContent = "IMG";
+      b.className = "text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-600 border border-rose-200";
+      badges.appendChild(b);
+    }
+    if (platform.features?.includes("textAnalysis")) {
+      const b = document.createElement("span");
+      b.textContent = "TXT";
+      b.className = "text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-600 border border-emerald-200";
+      badges.appendChild(b);
+    }
+
+    item.append(cb, dot, lbl, badges);
+
+    if (platform.type === "social") {
+      socialContainer.appendChild(item);
+    } else {
+      aiContainer.appendChild(item);
+    }
   }
 }
 
-function collectEnabledPlatformIds() {
-  const ids = [];
-  document.querySelectorAll("#platformList input[type='checkbox'][data-platform-id]").forEach((el) => {
-    if (el.checked) ids.push(el.dataset.platformId);
-  });
-  return ids;
-}
+// ── User-added platforms ──────────────────────────────────────────────────────
 
-function setAllPlatforms(checked) {
-  document.querySelectorAll("#platformList input[type='checkbox'][data-platform-id]").forEach((el) => {
-    el.checked = checked;
-    el.closest(".platform-item")?.classList.toggle("checked", checked);
-  });
-}
+let userAddedPlatforms = [];
 
-// ── Custom domains ──────────────────────────────────────────────────────────
+function renderUserAddedPlatforms() {
+  const list = $("userAddedPlatformsList");
+  const empty = $("userAddedEmpty");
+  if (!list) return;
 
-function renderCustomDomains(domains) {
-  const container = document.getElementById("customDomains");
-  if (!container) return;
-  container.innerHTML = "";
+  list.innerHTML = "";
+  if (userAddedPlatforms.length === 0) {
+    empty?.classList.remove("hidden");
+    return;
+  }
+  empty?.classList.add("hidden");
 
-  for (const domain of domains) {
-    const chip = document.createElement("div");
-    chip.className = "inline-flex items-center gap-1.5 pl-3 pr-2 py-1 bg-slate-100 hover:bg-red-50 border border-slate-200 hover:border-red-200 rounded-full text-[12px] font-medium text-slate-700 hover:text-red-600 transition-all duration-150 group";
+  for (const platform of userAddedPlatforms) {
+    const row = document.createElement("div");
+    row.className = "flex items-center gap-2 p-2.5 rounded-xl bg-teal-50 border border-teal-200";
 
-    const text = document.createElement("span");
-    text.textContent = domain;
+    const info = document.createElement("div");
+    info.className = "flex-1 min-w-0";
 
-    const removeBtn = document.createElement("button");
-    removeBtn.type = "button";
-    removeBtn.dataset.removeDomain = domain;
-    removeBtn.setAttribute("aria-label", `Remove ${domain}`);
-    removeBtn.className = "text-slate-400 group-hover:text-red-500 text-[15px] leading-none transition-colors";
-    removeBtn.textContent = "×";
+    const labelEl = document.createElement("div");
+    labelEl.className = "text-[12.5px] font-semibold text-teal-800 truncate";
+    labelEl.textContent = platform.label || platform.domain;
 
-    chip.append(text, removeBtn);
-    container.appendChild(chip);
+    const domainEl = document.createElement("div");
+    domainEl.className = "text-[11px] text-teal-600 font-mono truncate";
+    domainEl.textContent = platform.domain;
+
+    info.append(labelEl, domainEl);
+
+    // Feature badges
+    const badges = document.createElement("div");
+    badges.className = "flex gap-1 shrink-0";
+    if (platform.features?.includes("textAnalysis")) {
+      const b = document.createElement("span");
+      b.textContent = "TXT";
+      b.className = "text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200";
+      badges.appendChild(b);
+    }
+    if (platform.features?.includes("imageModeration")) {
+      const b = document.createElement("span");
+      b.textContent = "IMG";
+      b.className = "text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-200";
+      badges.appendChild(b);
+    }
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.title = "Remove";
+    deleteBtn.className = "w-6 h-6 flex items-center justify-center rounded-lg hover:bg-teal-100 transition-colors text-teal-500 hover:text-red-500 shrink-0";
+    deleteBtn.innerHTML = `<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+    </svg>`;
+    deleteBtn.addEventListener("click", () => {
+      userAddedPlatforms = userAddedPlatforms.filter((p) => p.id !== platform.id);
+      renderUserAddedPlatforms();
+    });
+
+    row.append(info, badges, deleteBtn);
+    list.appendChild(row);
   }
 }
 
-function getCustomDomainsFromUi() {
-  const values = [];
-  document.querySelectorAll("#customDomains [data-remove-domain]").forEach((el) => {
-    if (el.dataset.removeDomain) values.push(el.dataset.removeDomain);
-  });
-  return values;
-}
+function addUserPlatform() {
+  const domainInput = $("newPlatformDomain");
+  const labelInput = $("newPlatformLabel");
+  const textAnalysisCb = $("newPlatformTextAnalysis");
+  const imageModCb = $("newPlatformImageMod");
+  const errorEl = $("addPlatformError");
 
-function upsertCustomDomain(domain) {
-  const errorEl = document.getElementById("domainError");
-  if (errorEl) errorEl.textContent = "";
+  const rawDomain = domainInput?.value.trim();
+  if (!rawDomain) {
+    if (errorEl) { errorEl.textContent = "Please enter a domain (e.g. example.com)."; errorEl.classList.remove("hidden"); }
+    return;
+  }
+  if (errorEl) errorEl.classList.add("hidden");
 
-  const normalized = normalizeDomain(domain);
-  if (!normalized || !normalized.includes(".")) {
-    if (errorEl) errorEl.textContent = "Please enter a valid domain (e.g. example.com).";
+  const domain = rawDomain.replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "").toLowerCase();
+  if (userAddedPlatforms.some((p) => p.domain === domain)) {
+    if (errorEl) { errorEl.textContent = "This domain is already in your list."; errorEl.classList.remove("hidden"); }
     return;
   }
 
-  const current = getCustomDomainsFromUi();
-  if (!current.includes(normalized)) current.push(normalized);
-  renderCustomDomains(current.sort());
+  const features = [];
+  if (textAnalysisCb?.checked) features.push("textAnalysis");
+  if (imageModCb?.checked) features.push("imageModeration");
+  if (features.length === 0) features.push("textAnalysis");
+
+  const newPlatform = {
+    id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    label: labelInput?.value.trim() || domain,
+    domain,
+    features,
+  };
+
+  userAddedPlatforms.push(newPlatform);
+  renderUserAddedPlatforms();
+
+  if (domainInput) domainInput.value = "";
+  if (labelInput) labelInput.value = "";
 }
 
-// ── Status messages ─────────────────────────────────────────────────────────
-
-function showStatus(message, type) {
-  const pill = document.getElementById("statusPill");
-  if (!pill) return;
-  pill.textContent = message;
-  const base = "text-[11.5px] font-semibold px-3 py-1 rounded-full transition-all duration-300";
-  pill.className = type === "success"
-    ? `${base} bg-emerald-50 text-emerald-700 border border-emerald-200`
-    : `${base} bg-red-50 text-red-700 border border-red-200`;
-  pill.classList.remove("hidden");
-  setTimeout(() => { pill.classList.add("hidden"); }, 3000);
-}
-
-// ── API test ─────────────────────────────────────────────────────────────────
-
-async function testApiConnection() {
-  const field = document.getElementById("apiBaseUrl");
-  const resultEl = document.getElementById("apiTestResult");
-  if (!field || !resultEl) return;
-
-  const url = String(field.value || "").trim();
-  if (!url) { resultEl.textContent = "Enter a URL first."; return; }
-
-  resultEl.textContent = "Testing…";
-  resultEl.className = "api-test-result";
-
-  try {
-    const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(3000) });
-    if (res.ok) {
-      resultEl.textContent = "✓ API reachable and healthy";
-      resultEl.className = "api-test-result ok";
-    } else {
-      resultEl.textContent = `✕ API returned HTTP ${res.status}`;
-      resultEl.className = "api-test-result err";
-    }
-  } catch {
-    resultEl.textContent = "✕ Unreachable — check URL or network";
-    resultEl.className = "api-test-result err";
-  }
-}
-
-// ── Restore & Save ──────────────────────────────────────────────────────────
+// ── Restore ───────────────────────────────────────────────────────────────────
 
 async function restore() {
-  const field = document.getElementById("apiBaseUrl");
-  const guardrailToggle = document.getElementById("guardrailEnabled");
-  const autoAnonymizeToggle = document.getElementById("autoAnonymize");
-  const imageModerationToggle = document.getElementById("imageModerationEnabled");
-  const api = getSiteConfigApi();
-  if (!field || !guardrailToggle || !api) return;
-
   const data = await chrome.storage.sync.get(SETTINGS_KEYS);
-  const defaultEnabled = api.getDefaultEnabledPlatformIds();
-  const enabledPlatformIds = Array.isArray(data.enabledPlatformIds)
-    ? data.enabledPlatformIds
-    : defaultEnabled;
-  const customDomains = Array.isArray(data.customDomains)
-    ? data.customDomains.map((d) => normalizeDomain(d)).filter(Boolean)
-    : [];
 
-  field.value = data.apiBaseUrl || DEFAULT_API_BASE_URL;
-  guardrailToggle.checked = data.guardrailEnabled !== false;
-  if (autoAnonymizeToggle) autoAnonymizeToggle.checked = data.autoAnonymize === true;
-  // Image moderation is enabled by default.
-  if (imageModerationToggle) imageModerationToggle.checked = data.imageModerationEnabled !== false;
-  renderPlatforms(enabledPlatformIds);
-  renderCustomDomains(customDomains);
+  const apiUrl = $("apiBaseUrl");
+  if (apiUrl) apiUrl.value = data.apiBaseUrl || "http://localhost:8080";
+
+  const guardrailEl = $("guardrailEnabled");
+  if (guardrailEl) guardrailEl.checked = data.guardrailEnabled !== false;
+
+  const autoAnonEl = $("autoAnonymize");
+  if (autoAnonEl) autoAnonEl.checked = data.autoAnonymize === true;
+
+  const imgModEl = $("imageModerationEnabled");
+  if (imgModEl) imgModEl.checked = data.imageModerationEnabled !== false;
+
+  const savedEnabledIds = Array.isArray(data.enabledPlatformIds) ? data.enabledPlatformIds : [];
+  renderPlatforms(savedEnabledIds);
+
+  userAddedPlatforms = Array.isArray(data.userAddedPlatforms) ? data.userAddedPlatforms : [];
+  renderUserAddedPlatforms();
 }
+
+// ── Save ──────────────────────────────────────────────────────────────────────
 
 async function save() {
-  const field = document.getElementById("apiBaseUrl");
-  const guardrailToggle = document.getElementById("guardrailEnabled");
-  const autoAnonymizeToggle = document.getElementById("autoAnonymize");
-  const imageModerationToggle = document.getElementById("imageModerationEnabled");
-  if (!field || !guardrailToggle) return;
+  const apiUrl = $("apiBaseUrl")?.value.trim() || "http://localhost:8080";
+  const guardrailEnabled = $("guardrailEnabled")?.checked !== false;
+  const autoAnonymize = $("autoAnonymize")?.checked === true;
+  const imageModerationEnabled = $("imageModerationEnabled")?.checked !== false;
 
-  const value = String(field.value || "").trim();
-  if (!value) {
-    showStatus("Invalid API URL.", "error");
-    return;
+  const payload = {
+    apiBaseUrl: apiUrl,
+    guardrailEnabled,
+    autoAnonymize,
+    imageModerationEnabled,
+    enabledPlatformIds: enabledPlatformIds,
+    userAddedPlatforms,
+    // Legacy field: keep compatible with older code by deriving from userAddedPlatforms.
+    customDomains: userAddedPlatforms.map((p) => p.domain),
+  };
+
+  await chrome.storage.sync.set(payload);
+
+  if (authState.token) {
+    await syncSettingsToServer(payload);
+    showNotice("Settings saved & synced to your account.");
+  } else {
+    showNotice("Settings saved locally.");
   }
-
-  const enabledPlatformIds = collectEnabledPlatformIds();
-  const customDomains = getCustomDomainsFromUi();
-
-  await chrome.storage.sync.set({
-    apiBaseUrl: value,
-    guardrailEnabled: guardrailToggle.checked,
-    autoAnonymize: autoAnonymizeToggle ? autoAnonymizeToggle.checked : false,
-    imageModerationEnabled: imageModerationToggle ? imageModerationToggle.checked : true,
-    enabledPlatformIds,
-    customDomains,
-  });
-
-  showStatus("Settings saved", "success");
 }
 
-// ── Event listeners ──────────────────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────────────
 
-document.getElementById("saveBtn")?.addEventListener("click", save);
+async function init() {
+  await loadAuthState();
+  renderAuthUI();
 
-document.getElementById("testApiBtn")?.addEventListener("click", testApiConnection);
-
-document.getElementById("selectAllBtn")?.addEventListener("click", () => setAllPlatforms(true));
-document.getElementById("deselectAllBtn")?.addEventListener("click", () => setAllPlatforms(false));
-
-document.getElementById("addDomainBtn")?.addEventListener("click", () => {
-  const input = document.getElementById("customDomainInput");
-  if (!input) return;
-  upsertCustomDomain(input.value);
-  input.value = "";
-  input.focus();
-});
-
-document.getElementById("customDomainInput")?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    upsertCustomDomain(e.target.value);
-    e.target.value = "";
+  // If already authenticated, pull server settings first.
+  if (authState.token) {
+    await syncSettingsFromServer();
   }
-});
 
-document.getElementById("customDomains")?.addEventListener("click", (event) => {
-  const target = event.target;
-  if (!(target instanceof HTMLElement)) return;
-  const domain = target.dataset.removeDomain;
-  if (!domain) return;
-  const remaining = getCustomDomainsFromUi().filter((d) => d !== domain);
-  renderCustomDomains(remaining);
-});
+  await restore();
 
-restore();
+  // ── Bind events ─────────────────────────────────────────────────────────────
+  $("saveBtn")?.addEventListener("click", save);
+
+  $("loginBtn")?.addEventListener("click", () => doAuthRequest("/v1/auth/login"));
+  $("signupBtn")?.addEventListener("click", () => doAuthRequest("/v1/auth/signup"));
+  $("logoutBtn")?.addEventListener("click", doLogout);
+
+  // Allow Enter key in auth fields.
+  const authEnter = (e) => { if (e.key === "Enter") doAuthRequest("/v1/auth/login"); };
+  $("authEmail")?.addEventListener("keydown", authEnter);
+  $("authPassword")?.addEventListener("keydown", authEnter);
+
+  $("addPlatformBtn")?.addEventListener("click", addUserPlatform);
+  $("newPlatformDomain")?.addEventListener("keydown", (e) => { if (e.key === "Enter") addUserPlatform(); });
+}
+
+document.addEventListener("DOMContentLoaded", init);

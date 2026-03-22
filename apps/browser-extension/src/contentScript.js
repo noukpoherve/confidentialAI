@@ -12,17 +12,21 @@
         "guardrailEnabled",
         "enabledPlatformIds",
         "customDomains",
+        "userAddedPlatforms",
       ]);
       return {
         guardrailEnabled: data.guardrailEnabled !== false,
-        enabledPlatformIds: Array.isArray(data.enabledPlatformIds) ? data.enabledPlatformIds : undefined,
+        enabledPlatformIds: Array.isArray(data.enabledPlatformIds) ? data.enabledPlatformIds : [],
         customDomains: Array.isArray(data.customDomains) ? data.customDomains : [],
+        // Server-synced, per-user platforms
+        userAddedPlatforms: Array.isArray(data.userAddedPlatforms) ? data.userAddedPlatforms : [],
       };
     } catch (_error) {
       return {
         guardrailEnabled: true,
-        enabledPlatformIds: undefined,
+        enabledPlatformIds: [],
         customDomains: [],
+        userAddedPlatforms: [],
       };
     }
   }

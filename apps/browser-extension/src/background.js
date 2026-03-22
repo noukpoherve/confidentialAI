@@ -5,6 +5,15 @@ async function getApiBaseUrl() {
   return data.apiBaseUrl || DEFAULT_API_BASE_URL;
 }
 
+async function getAuthToken() {
+  try {
+    const data = await chrome.storage.local.get(["authToken"]);
+    return data.authToken || null;
+  } catch {
+    return null;
+  }
+}
+
 async function incrementStats(action) {
   try {
     const { stats = { analyzed: 0, blocked: 0 } } = await chrome.storage.local.get("stats");
@@ -25,42 +34,84 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     ANALYZE_IMAGE:    "/v1/analyze-image",
     SIGNAL_SITE_ISSUE: "/v1/site-signals",
   };
+
+  // ── Direct API proxy (content script → background → API) ─────────────────
   const route = routeByType[message?.type];
-  if (!route) {
-    return false;
-  }
+  if (route) {
+    (async () => {
+      try {
+        const [apiBaseUrl, token] = await Promise.all([getApiBaseUrl(), getAuthToken()]);
+        const headers = { "Content-Type": "application/json" };
+        if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  (async () => {
-    try {
-      const apiBaseUrl = await getApiBaseUrl();
-      const response = await fetch(`${apiBaseUrl}${route}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(message.payload),
-      });
+        const response = await fetch(`${apiBaseUrl}${route}`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(message.payload),
+        });
 
-      if (!response.ok) {
+        if (!response.ok) {
+          sendResponse({ ok: false, error: `API error (${response.status})` });
+          return;
+        }
+
+        const data = await response.json();
+        sendResponse({ ok: true, data });
+
+        if (message.type === "ANALYZE_PROMPT") {
+          await incrementStats(data.action);
+        }
+      } catch (error) {
         sendResponse({
           ok: false,
-          error: `API error (${response.status})`,
+          error: error instanceof Error ? error.message : "Unknown error",
         });
-        return;
       }
+    })();
+    return true; // Keep channel open for async response.
+  }
 
-      const data = await response.json();
-      sendResponse({ ok: true, data });
+  // ── Auth / settings proxy (options page → background → API) ──────────────
+  // Options page uses this to avoid CORS issues with non-localhost deployments.
+  if (message?.type === "API_CALL") {
+    (async () => {
+      try {
+        const { method = "GET", path, body, useToken = true } = message.payload || {};
+        const [apiBaseUrl, token] = await Promise.all([getApiBaseUrl(), getAuthToken()]);
+        const headers = { "Content-Type": "application/json" };
+        if (useToken && token) headers["Authorization"] = `Bearer ${token}`;
 
-      if (message.type === "ANALYZE_PROMPT") {
-        await incrementStats(data.action);
+        const fetchOptions = { method, headers };
+        if (body) fetchOptions.body = JSON.stringify(body);
+
+        const response = await fetch(`${apiBaseUrl}${path}`, fetchOptions);
+        const data = await response.json().catch(() => ({}));
+        sendResponse({ ok: response.ok, status: response.status, data });
+      } catch (error) {
+        sendResponse({
+          ok: false,
+          status: 0,
+          error: error instanceof Error ? error.message : "Network error",
+        });
       }
-    } catch (error) {
-      sendResponse({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
-    }
-  })();
+    })();
+    return true;
+  }
 
-  // Keep the channel open for an async response.
-  return true;
+  // ── Token management ──────────────────────────────────────────────────────
+  if (message?.type === "SET_AUTH_TOKEN") {
+    chrome.storage.local.set({ authToken: message.token }).then(() => {
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+
+  if (message?.type === "CLEAR_AUTH_TOKEN") {
+    chrome.storage.local.remove("authToken").then(() => {
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+
+  return false;
 });

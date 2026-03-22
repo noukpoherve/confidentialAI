@@ -277,8 +277,27 @@ function buildCustomConfig(domain) {
   return {
     id: `custom:${normalized}`,
     label: `Custom (${normalized})`,
-    type: "ai",
+    type: "custom",
     features: ["textAnalysis", "imageModeration"],
+    domains: [normalized],
+    sendButtonPatterns: GENERIC_SEND_BUTTON_PATTERNS,
+    sendButtonSelectors: GENERIC_SEND_BUTTON_SELECTORS,
+    promptSelectors: GENERIC_PROMPT_SELECTORS,
+    responseSelectors: GENERIC_RESPONSE_SELECTORS,
+  };
+}
+
+/**
+ * Build a config from a user-added platform entry (server-synced, per-user).
+ * @param {{ id: string, label: string, domain: string, features: string[] }} entry
+ */
+function buildUserAddedConfig(entry) {
+  const normalized = normalizeDomain(entry.domain);
+  return {
+    id: `user:${entry.id}`,
+    label: entry.label || normalized,
+    type: "custom",
+    features: Array.isArray(entry.features) ? entry.features : ["textAnalysis", "imageModeration"],
     domains: [normalized],
     sendButtonPatterns: GENERIC_SEND_BUTTON_PATTERNS,
     sendButtonSelectors: GENERIC_SEND_BUTTON_SELECTORS,
@@ -295,12 +314,17 @@ function resolveCurrentSiteConfig(hostname, userSettings = {}) {
   const guardrailEnabled = userSettings.guardrailEnabled !== false;
   if (!guardrailEnabled) return null;
 
-  const enabledIds = Array.isArray(userSettings.enabledPlatformIds)
+  // Empty enabledPlatformIds → treat as "all built-in platforms enabled" (opt-out model).
+  const enabledIds = Array.isArray(userSettings.enabledPlatformIds) && userSettings.enabledPlatformIds.length > 0
     ? userSettings.enabledPlatformIds
     : getDefaultEnabledPlatformIds();
   const customDomains = Array.isArray(userSettings.customDomains) ? userSettings.customDomains : [];
+  const userAddedPlatforms = Array.isArray(userSettings.userAddedPlatforms)
+    ? userSettings.userAddedPlatforms
+    : [];
   const normalizedHost = normalizeDomain(hostname);
 
+  // 1. Built-in platforms (AI + Social seed).
   for (const cfg of SITE_CONFIGS) {
     if (!enabledIds.includes(cfg.id)) continue;
     if ((cfg.domains || []).some((domain) => hostMatchesDomain(normalizedHost, domain))) {
@@ -308,6 +332,14 @@ function resolveCurrentSiteConfig(hostname, userSettings = {}) {
     }
   }
 
+  // 2. User-added platforms (server-synced, per-user).
+  for (const entry of userAddedPlatforms) {
+    if (entry.domain && hostMatchesDomain(normalizedHost, entry.domain)) {
+      return buildUserAddedConfig(entry);
+    }
+  }
+
+  // 3. Legacy custom domains (kept for backward compatibility).
   for (const domain of customDomains) {
     if (hostMatchesDomain(normalizedHost, domain)) {
       return buildCustomConfig(domain);
@@ -321,5 +353,6 @@ window.ConfidentialAgentSiteConfigs = {
   SITE_CONFIGS,
   resolveCurrentSiteConfig,
   getDefaultEnabledPlatformIds,
+  buildUserAddedConfig,
   normalizeDomain,
 };

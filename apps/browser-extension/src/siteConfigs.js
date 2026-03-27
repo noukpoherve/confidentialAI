@@ -89,9 +89,17 @@ const PLATFORM_SEED = [
       'div[contenteditable="true"][role="textbox"]',
     ],
     responseSelectors: [
+      // Primary: scoped to assistant messages only (avoids scanning user bubbles)
+      'div[data-message-author-role="assistant"] .markdown.prose',
       'div[data-message-author-role="assistant"] .markdown',
       'div[data-message-author-role="assistant"]',
-      'article[data-testid*="conversation-turn"] .markdown',
+      // Fallback selectors for ChatGPT DOM variants
+      'article[data-testid*="conversation-turn-"] .markdown',
+      'article[data-testid*="conversation-turn-"]',
+      '[data-testid="conversation-turn-2"] .markdown',   // alternating turn indices
+      '[data-testid="conversation-turn-4"] .markdown',
+      '[data-testid="conversation-turn-6"] .markdown',
+      '.agent-turn .markdown',
       ...GENERIC_RESPONSE_SELECTORS,
     ],
   },
@@ -103,8 +111,20 @@ const PLATFORM_SEED = [
     domains: ["claude.ai"],
     sendButtonPatterns: [/send/i, /submit/i],
     sendButtonSelectors: GENERIC_SEND_BUTTON_SELECTORS,
-    promptSelectors: ['div[contenteditable="true"]', 'textarea'],
-    responseSelectors: ['div[data-testid*="assistant"]', 'main [role="article"]', 'main .prose'],
+    promptSelectors: [
+      'div[contenteditable="true"][aria-label*="message" i]',
+      'div[contenteditable="true"]',
+      'textarea',
+    ],
+    responseSelectors: [
+      // Claude's assistant message containers
+      '[data-testid="assistant-message"]',
+      'div[data-testid*="message-content"]',
+      '.font-claude-message',
+      'main [role="article"]',
+      'main .prose',
+      ...GENERIC_RESPONSE_SELECTORS,
+    ],
   },
   {
     id: "gemini",
@@ -114,8 +134,16 @@ const PLATFORM_SEED = [
     domains: ["gemini.google.com"],
     sendButtonPatterns: [/send/i, /run/i, /ask/i],
     sendButtonSelectors: GENERIC_SEND_BUTTON_SELECTORS,
-    promptSelectors: ['textarea', 'div[contenteditable="true"]'],
-    responseSelectors: ['message-content', '[data-test-id*="response"]', 'main article'],
+    promptSelectors: ['textarea', 'div[contenteditable="true"]', 'rich-textarea'],
+    responseSelectors: [
+      'message-content .markdown',
+      'message-content',
+      'model-response .markdown',
+      'model-response',
+      '[data-test-id*="response"]',
+      'main article',
+      ...GENERIC_RESPONSE_SELECTORS,
+    ],
   },
   { id: "copilot",     label: "Microsoft Copilot", type: "ai", features: ["textAnalysis", "imageModeration"], domains: ["copilot.microsoft.com"] },
   { id: "perplexity",  label: "Perplexity",         type: "ai", features: ["textAnalysis", "imageModeration"], domains: ["perplexity.ai"] },

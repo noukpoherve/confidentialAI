@@ -24,6 +24,8 @@ export interface DetectionHit {
     | "EMAIL"
     | "PHONE"
     | "IBAN"
+    | "SWIFT_BIC"
+    | "LEGAL_HR"
     | "API_KEY"
     | "PASSWORD"
     | "TOKEN"

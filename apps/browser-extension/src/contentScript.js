@@ -79,10 +79,10 @@
       animation: "ca-slide-in 0.2s ease",
     });
     const msg = Object.assign(document.createElement("span"), {
-      textContent: "🚫  Blocked image detected — remove the image from your post before sending.",
+      textContent: "🛡  Flagged image — remove it from your message, then click confirm to unlock Send.",
     });
     const dismissBtn = document.createElement("button");
-    dismissBtn.textContent = "I've removed it ✓";
+    dismissBtn.textContent = "I've removed it — unlock Send ✓";
     Object.assign(dismissBtn.style, {
       background: "rgba(255,255,255,0.18)", border: "1.5px solid rgba(255,255,255,0.55)",
       color: "#fff", padding: "5px 14px", borderRadius: "7px",
@@ -419,8 +419,10 @@
         const TYPE_LABELS = {
           API_KEY: "🔑 API Key", PASSWORD: "🔒 Password", TOKEN: "🎫 Token",
           EMAIL: "✉ Email", PHONE: "📞 Phone", IBAN: "🏦 IBAN",
+          SWIFT_BIC: "🏛 SWIFT/BIC", LEGAL_HR: "📋 HR / santé / famille",
           SOURCE_CODE: "💻 Source code", INTERNAL_URL: "🔗 Internal URL",
           PROMPT_INJECTION: "⚠ Injection", LLM_SENSITIVE: "🤖 Semantic PII",
+          TOXIC_LANGUAGE: "💬 Toxic language", HARMFUL_URL: "🔗 Harmful link",
         };
 
         // ── Panel container ──────────────────────────────────────────────────
@@ -680,6 +682,278 @@
           prompt: originalPrompt,
           error: error instanceof Error ? error.message : "Unknown modal rendering error",
         });
+      }
+    });
+  }
+
+  /**
+   * Show a rephrase-suggestion modal when action === "SUGGEST_REPHRASE".
+   *
+   * Presents 3 AI-generated alternatives that preserve the user's intent while
+   * removing offensive or aggressive language.  The user can:
+   *   - Click "Use this" on any card → that phrasing is adopted and sent.
+   *   - Click "Edit manually" → the first suggestion loads in an editor.
+   *   - Click "Send original" → the original text is submitted unchanged.
+   *   - Click "Cancel" / press Esc → submission is aborted.
+   *
+   * Returns a Promise<{ status, prompt }> consistent with showPromptReviewModal.
+   */
+  function showRephraseModal({ suggestions = [], originalPrompt, detections = [], riskScore = 0 }) {
+    if (promptModalOpen) {
+      return Promise.resolve({ status: "cancel", prompt: originalPrompt });
+    }
+    promptModalOpen = true;
+    _injectCaStyles();
+
+    return new Promise((resolve) => {
+      try {
+        const accent = "#7c3aed"; // violet — distinct from red/amber security modals
+        const headerBg = "#f5f3ff";
+        const pillBg = "#ede9fe";
+        const pillText = "#5b21b6";
+
+        const panel = document.createElement("div");
+        panel.dataset.confidentialAgentModal = "true";
+        Object.assign(panel.style, {
+          position: "fixed", bottom: "24px", right: "24px",
+          width: "min(440px, calc(100vw - 48px))", maxHeight: "90vh",
+          overflowY: "auto", background: "#ffffff", borderRadius: "16px",
+          boxShadow: "0 12px 48px rgba(0,0,0,0.18), 0 2px 10px rgba(0,0,0,0.08)",
+          border: `2px solid ${accent}`, zIndex: "2147483647",
+          fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif",
+          animation: "ca-slide-in 0.25s cubic-bezier(0.34,1.56,0.64,1) forwards",
+          overflow: "hidden",
+        });
+
+        // ── Header ───────────────────────────────────────────────────────────
+        const header = document.createElement("div");
+        Object.assign(header.style, {
+          background: headerBg, padding: "14px 16px",
+          display: "flex", alignItems: "center", gap: "10px",
+          borderBottom: "1px solid rgba(0,0,0,0.06)", flexShrink: "0",
+        });
+        const hIcon = document.createElement("div");
+        Object.assign(hIcon.style, {
+          width: "34px", height: "34px", background: accent,
+          borderRadius: "9px", display: "flex", alignItems: "center",
+          justifyContent: "center", fontSize: "17px", flexShrink: "0",
+        });
+        hIcon.textContent = "✍️";
+        const hMeta = document.createElement("div");
+        hMeta.style.flex = "1";
+        const hTitle = document.createElement("div");
+        Object.assign(hTitle.style, { fontWeight: "700", fontSize: "14px", color: "#0f172a" });
+        hTitle.textContent = "Language improvement suggested";
+        const hSub = document.createElement("div");
+        Object.assign(hSub.style, { fontSize: "11px", color: "#64748b", marginTop: "1px" });
+        hSub.textContent = "Confidential Agent · Tone moderation";
+        hMeta.append(hTitle, hSub);
+        const closeBtn = document.createElement("button");
+        Object.assign(closeBtn.style, {
+          background: "none", border: "none", cursor: "pointer",
+          color: "#94a3b8", fontSize: "20px", lineHeight: "1",
+          padding: "2px 4px", borderRadius: "4px",
+        });
+        closeBtn.type = "button";
+        closeBtn.textContent = "×";
+        header.append(hIcon, hMeta, closeBtn);
+
+        // ── Body ─────────────────────────────────────────────────────────────
+        const body = document.createElement("div");
+        body.style.padding = "16px";
+
+        // Detection pills (toxic categories)
+        if (detections && detections.length > 0) {
+          const pillsRow = document.createElement("div");
+          Object.assign(pillsRow.style, { display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "12px" });
+          const seen = new Set();
+          for (const d of detections) {
+            if (seen.has(d.type)) continue;
+            seen.add(d.type);
+            const pill = document.createElement("span");
+            Object.assign(pill.style, {
+              display: "inline-flex", alignItems: "center", padding: "3px 9px",
+              borderRadius: "999px", background: pillBg, color: pillText,
+              fontSize: "11px", fontWeight: "600",
+            });
+            const TYPE_LABELS_REPHRASE = { TOXIC_LANGUAGE: "💬 Offensive language", AGGRESSION: "😠 Aggression", PROFANITY: "🤬 Profanity", INSULT: "🗣 Insult", HATE_SPEECH: "⛔ Hate speech", HARASSMENT: "🚨 Harassment" };
+            pill.textContent = TYPE_LABELS_REPHRASE[d.type] || d.type;
+            pillsRow.appendChild(pill);
+          }
+          body.appendChild(pillsRow);
+        }
+
+        // Description
+        const desc = document.createElement("p");
+        Object.assign(desc.style, { fontSize: "12px", color: "#64748b", marginBottom: "14px", lineHeight: "1.6" });
+        desc.textContent = suggestions.length > 0
+          ? "Offensive or aggressive language was detected. Choose a kinder alternative, edit manually, or send the original."
+          : "Offensive or aggressive language was detected. Please review your message.";
+        body.appendChild(desc);
+
+        // ── Suggestion cards ─────────────────────────────────────────────────
+        const labels = ["💡 Option 1", "💡 Option 2", "💡 Option 3"];
+        if (suggestions.length > 0) {
+          const cardsLabel = document.createElement("div");
+          Object.assign(cardsLabel.style, {
+            fontSize: "10px", fontWeight: "700", color: "#7c3aed",
+            textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px",
+          });
+          cardsLabel.textContent = "Suggested alternatives";
+          body.appendChild(cardsLabel);
+
+          suggestions.forEach((suggestion, idx) => {
+            const card = document.createElement("div");
+            Object.assign(card.style, {
+              background: "#f8f7ff", border: "1.5px solid #ddd6fe",
+              borderRadius: "10px", padding: "10px 12px",
+              marginBottom: "8px", cursor: "pointer",
+              transition: "border-color 0.15s, background 0.15s",
+            });
+            card.addEventListener("mouseenter", () => {
+              card.style.borderColor = accent;
+              card.style.background = "#f0eeff";
+            });
+            card.addEventListener("mouseleave", () => {
+              card.style.borderColor = "#ddd6fe";
+              card.style.background = "#f8f7ff";
+            });
+
+            const cardHeader = document.createElement("div");
+            Object.assign(cardHeader.style, {
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              marginBottom: "6px",
+            });
+            const cardLabel = document.createElement("span");
+            Object.assign(cardLabel.style, {
+              fontSize: "10px", fontWeight: "700", color: "#7c3aed",
+              textTransform: "uppercase", letterSpacing: "0.05em",
+            });
+            cardLabel.textContent = labels[idx] || `Option ${idx + 1}`;
+            const useBtn = document.createElement("button");
+            useBtn.type = "button";
+            useBtn.textContent = "Use this ✓";
+            Object.assign(useBtn.style, {
+              background: accent, color: "#fff", border: "none",
+              borderRadius: "6px", padding: "4px 10px",
+              fontSize: "11px", fontWeight: "700", cursor: "pointer",
+              transition: "opacity 0.15s",
+            });
+            useBtn.addEventListener("mouseenter", () => { useBtn.style.opacity = "0.82"; });
+            useBtn.addEventListener("mouseleave", () => { useBtn.style.opacity = "1"; });
+            useBtn.addEventListener("click", (e) => {
+              e.stopPropagation();
+              cleanupAndResolve({ status: "auto", prompt: suggestion });
+            });
+
+            const cardText = document.createElement("div");
+            Object.assign(cardText.style, {
+              fontSize: "13px", color: "#1e293b", lineHeight: "1.55",
+            });
+            cardText.textContent = suggestion;
+
+            cardHeader.append(cardLabel, useBtn);
+            card.append(cardHeader, cardText);
+            card.addEventListener("click", () => cleanupAndResolve({ status: "auto", prompt: suggestion }));
+            body.appendChild(card);
+          });
+        }
+
+        // ── Manual editor (collapsed by default) ─────────────────────────────
+        const editWrap = document.createElement("div");
+        editWrap.style.display = "none";
+        editWrap.style.marginTop = "10px";
+        const editLbl = document.createElement("label");
+        Object.assign(editLbl.style, {
+          display: "block", fontSize: "10px", fontWeight: "700",
+          color: "#64748b", marginBottom: "6px",
+          textTransform: "uppercase", letterSpacing: "0.06em",
+        });
+        editLbl.textContent = "Your message — edit to improve tone";
+        const ta = document.createElement("textarea");
+        ta.value = suggestions[0] || originalPrompt;
+        Object.assign(ta.style, {
+          width: "100%", minHeight: "90px", maxHeight: "180px",
+          fontFamily: "ui-monospace,SFMono-Regular,monospace",
+          fontSize: "12px", border: "1.5px solid #e2e8f0", borderRadius: "8px",
+          padding: "10px", boxSizing: "border-box", resize: "vertical",
+          color: "#1e293b", background: "#f8fafc", lineHeight: "1.5", outline: "none",
+        });
+        ta.addEventListener("focus", () => { ta.style.borderColor = accent; ta.style.background = "#fff"; });
+        ta.addEventListener("blur", () => { ta.style.borderColor = "#e2e8f0"; ta.style.background = "#f8fafc"; });
+        editWrap.append(editLbl, ta);
+        body.appendChild(editWrap);
+
+        // ── Action buttons ────────────────────────────────────────────────────
+        const actRow = document.createElement("div");
+        Object.assign(actRow.style, { display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "14px" });
+
+        function mkBtn2(label, variant) {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.textContent = label;
+          Object.assign(b.style, {
+            padding: "8px 14px", borderRadius: "8px",
+            fontSize: "12px", fontWeight: "600", cursor: "pointer",
+            transition: "opacity 0.15s", border: "1.5px solid",
+            outline: "none", fontFamily: "inherit", lineHeight: "1",
+          });
+          if (variant === "primary") {
+            Object.assign(b.style, { background: accent, borderColor: accent, color: "#fff" });
+            b.addEventListener("mouseenter", () => { b.style.opacity = "0.82"; });
+            b.addEventListener("mouseleave", () => { b.style.opacity = "1"; });
+          } else if (variant === "ghost-danger") {
+            Object.assign(b.style, { background: "#fff5f5", borderColor: "#fca5a5", color: "#ef4444" });
+          } else {
+            Object.assign(b.style, { background: "#fff", borderColor: "#e2e8f0", color: "#64748b" });
+            b.addEventListener("mouseenter", () => { b.style.background = "#f8fafc"; });
+            b.addEventListener("mouseleave", () => { b.style.background = "#fff"; });
+          }
+          return b;
+        }
+
+        let editOpen = false;
+        function toggleEdit2() {
+          editOpen = !editOpen;
+          editWrap.style.display = editOpen ? "block" : "none";
+          editManualBtn.textContent = editOpen ? "Hide editor" : "Edit manually";
+          sendEditedBtn.style.display = editOpen ? "" : "none";
+          if (editOpen) setTimeout(() => ta.focus(), 40);
+        }
+
+        function cleanupAndResolve(value) {
+          panel.style.animation = "ca-slide-out 0.18s ease forwards";
+          setTimeout(() => { promptModalOpen = false; panel.remove(); resolve(value); }, 180);
+        }
+
+        const editManualBtn = mkBtn2("Edit manually", "ghost");
+        const sendEditedBtn = mkBtn2("Send edited", "primary");
+        sendEditedBtn.style.display = "none";
+        const sendOriginalBtn = mkBtn2("Send original", "ghost-danger");
+        const cancelBtn = mkBtn2("Cancel", "ghost");
+
+        editManualBtn.addEventListener("click", toggleEdit2);
+        sendEditedBtn.addEventListener("click", () => cleanupAndResolve({ status: "manual", prompt: ta.value }));
+        sendOriginalBtn.addEventListener("click", () => cleanupAndResolve({ status: "original", prompt: originalPrompt }));
+        cancelBtn.addEventListener("click", () => cleanupAndResolve({ status: "cancel", prompt: originalPrompt }));
+        closeBtn.addEventListener("click", () => cleanupAndResolve({ status: "cancel", prompt: originalPrompt }));
+
+        function onEsc(e) {
+          if (e.key === "Escape") {
+            document.removeEventListener("keydown", onEsc);
+            cleanupAndResolve({ status: "cancel", prompt: originalPrompt });
+          }
+        }
+        document.addEventListener("keydown", onEsc);
+
+        actRow.append(editManualBtn, sendEditedBtn, sendOriginalBtn, cancelBtn);
+        body.appendChild(actRow);
+        panel.append(header, body);
+        document.body.appendChild(panel);
+
+      } catch (error) {
+        promptModalOpen = false;
+        resolve({ status: "fallback", prompt: originalPrompt, error: error instanceof Error ? error.message : "Unknown error" });
       }
     });
   }
@@ -1080,12 +1354,18 @@
       const categoryIcons = {
         IMAGE_SEXUAL: "🔞",
         IMAGE_SEXUAL_MINORS: "🚫",
+        IMAGE_PARTIAL_NUDITY: "👙",
         IMAGE_VIOLENCE: "⚠️",
         IMAGE_VIOLENCE_GRAPHIC: "🩸",
         IMAGE_SELF_HARM: "🆘",
+        IMAGE_SELF_HARM_INTENT: "🆘",
+        IMAGE_SELF_HARM_INSTRUCTIONS: "🆘",
         IMAGE_HATE: "⛔",
+        IMAGE_HATE_THREATENING: "⛔",
         IMAGE_HARASSMENT: "🚨",
-        IMAGE_ILLICIT: "🔒",
+        IMAGE_HARASSMENT_THREATENING: "🚨",
+        IMAGE_ILLICIT: "💊",
+        IMAGE_ILLICIT_VIOLENT: "💣",
       };
       for (const d of (decision.detections || [])) {
         const pill = document.createElement("div");
@@ -1243,17 +1523,18 @@
     const proceed = await showImageModerationModal(decision, file.name, previewObjectUrl);
 
     if (!proceed) {
+      // User chose NOT to send (Cancel on WARN, or "Remove image" on BLOCK).
+      // Always gate the Send button regardless of action severity.
+      // React-based platforms (ChatGPT, Claude, etc.) may have already accepted
+      // the file into their internal state — clearFileInput only resets the DOM
+      // element, not the platform's React state.  The banner forces the user to
+      // explicitly confirm they removed the image preview before Send is re-enabled.
       clearFileInput(inputElement);
-
-      if (decision.action === "BLOCK") {
-        // Even though the file input is cleared, React-based platforms (Facebook,
-        // Instagram, etc.) may have already accepted the file. Keep the send button
-        // gated until the user confirms they have removed the image preview.
-        blockedImagePending = true;
-        showBlockedImageBanner();
-      }
+      blockedImagePending = true;
+      showBlockedImageBanner();
     }
-    // If proceed=true (WARN and user chose to continue), the file stays in the input.
+    // If proceed=true (WARN only, user explicitly chose "Send anyway"), the file
+    // stays in the input and the message is allowed through.
   }
 
   /**
@@ -1325,14 +1606,13 @@
           if (!result?.ok) { URL.revokeObjectURL(previewObjectUrl); continue; }
           const decision = result.data;
           if (decision.action === "ALLOW") { URL.revokeObjectURL(previewObjectUrl); continue; }
-          // Show modal — if not proceeding we can't undo the paste, so we warn
-          // and show a toast so the user knows to delete the pasted image manually.
+          // Show modal — if not proceeding, gate the Send button and show a banner
+          // so the user must confirm they have manually removed the pasted image.
+          // (We cannot un-paste, but we can block sending until confirmed.)
           const proceed = await showImageModerationModal(decision, "pasted image", previewObjectUrl);
           if (!proceed) {
-            showToast(
-              "Image flagged — please remove it from the chat before sending.",
-              "warning"
-            );
+            blockedImagePending = true;
+            showBlockedImageBanner();
           }
         }
       },
@@ -1466,7 +1746,7 @@
           manualWarnBypassHash = hashString(bestRedacted.trim());
           replaySubmission();
         }, 600);
-        return;
+      return;
       }
       // Semantic-only detection — no exact value to replace (e.g. LLM flagged
       // a combination of fields with no precise match).
@@ -1478,12 +1758,46 @@
     // The editor pre-loads with the ALREADY ANONYMIZED text so the user only
     // needs to confirm or make minor edits before sending.
 
+    // ── SUGGEST_REPHRASE: language improvement (toxicity detected) ───────────
+    if (decision.action === "SUGGEST_REPHRASE") {
+      const rephrase = await showRephraseModal({
+        suggestions: decision.suggestions || [],
+        detections: decision.detections || [],
+        riskScore: decision.riskScore || decision.risk_score || 0,
+        originalPrompt: prompt,
+      });
+
+      if (!rephrase || rephrase.status === "cancel") {
+        showUserAlert("Message not sent. You can edit and retry.");
+        return;
+      }
+      if (rephrase.status === "original") {
+        // User explicitly chose to send the original — bypass toxicity check once.
+        manualWarnBypassHash = hashString(prompt);
+        showToast("Sending original message.", "info");
+        replaySubmission();
+        return;
+      }
+      if (rephrase.status === "auto" || rephrase.status === "manual") {
+        const chosenText = String(rephrase.prompt || "").trim();
+        if (!chosenText) { showUserAlert("Message is empty. Please edit and retry."); return; }
+        writePromptValue(el, chosenText);
+        manualWarnBypassHash = hashString(chosenText);
+        showToast("Message updated — click Send to submit.", "success");
+        return;
+      }
+      // Fallback: allow original
+      manualWarnBypassHash = hashString(prompt);
+      replaySubmission();
+      return;
+    }
+
     if (decision.action === "BLOCK" || decision.action === "WARN" || decision.action === "ANONYMIZE") {
       const review = await showPromptReviewModal({
         action: decision.action,
         reasons: decision.reasons,
         detections: decision.detections || [],
-        riskScore: decision.risk_score || 0,
+        riskScore: decision.riskScore || decision.risk_score || 0,
         originalPrompt: prompt,
         suggestedPrompt: bestRedacted,
       });
@@ -1531,7 +1845,7 @@
           );
           return;
         }
-        if (decision.action === "WARN") {
+    if (decision.action === "WARN") {
           // Allow one explicit retry after user manual review to avoid UX loops on medium risk.
           manualWarnBypassHash = hashString(manualPrompt);
         }
@@ -1549,8 +1863,8 @@
             if (continueSend) {
               manualWarnBypassHash = hashString(prompt);
               replaySubmission();
-              return;
-            }
+        return;
+      }
           }
           showUserAlert(
             "No automatic redaction could be applied for this content. Please edit manually."
@@ -1569,20 +1883,34 @@
     }
   }
 
+  // Per-node map: tracks the text that was last SUBMITTED to the API.
+  // Used to skip re-analysis of text that hasn't changed between scans
+  // (happens frequently during streaming when tokens arrive quickly).
+  const _nodeSubmittedText = new WeakMap();
+
   async function analyzeResponseNode(node) {
     const cfg = getActiveSiteConfig();
     if (!cfg) return;
     if (extensionContextInvalid) return;
     const responseText = normalizeText(node.innerText || node.textContent || "");
-    if (!responseText || responseText.length < 24) return;
+    // Require at least 60 chars — avoids analysing partial streaming tokens.
+    if (!responseText || responseText.length < 60) return;
 
     const hash = hashString(responseText);
-    if (analyzedResponseHashes.has(hash) || isAlreadyReviewed(node, hash)) {
-      return;
-    }
+    // Skip if already reviewed with this exact content.
+    if (isAlreadyReviewed(node, hash)) return;
+    // Skip if this exact text was already sent to the API (deduplication).
+    if (analyzedResponseHashes.has(hash)) return;
+    // Skip if text hasn't changed since the last analysis attempt on this node.
+    if (_nodeSubmittedText.get(node) === responseText) return;
 
     analyzedResponseHashes.add(hash);
     markReviewed(node, hash);
+    _nodeSubmittedText.set(node, responseText);
+
+    // Show a brief scanning indicator so the user knows AVS is active.
+    // Use a unique toast ID so multiple concurrent scans collapse into one.
+    showToast("🔍 Scanning AI response…", "info");
 
     const payload = {
       requestId: `resp-${Date.now()}-${hash}`,
@@ -1602,12 +1930,16 @@
       if (isContextInvalidError(result?.error)) {
         return;
       }
-      console.warn("Confidential Agent response API unavailable:", result?.error);
+      console.warn("[Confidential Agent] Response API unavailable:", result?.error);
       return;
     }
 
     const decision = result.data;
-    if (decision.action === "ALLOW") return;
+    if (decision.action === "ALLOW") {
+      // Response is clean — show a brief reassuring confirmation.
+      showToast("✅ Response scanned — no sensitive content.", "success");
+      return;
+    }
 
     if (decision.action === "BLOCK") {
       // Preferred path: blur only the identified sensitive fragments.
@@ -1675,23 +2007,53 @@
       );
       return;
     }
+
+    if (decision.action === "SUGGEST_REPHRASE") {
+      // The AI's response itself contains offensive, aggressive, or inappropriate
+      // language.  We cannot rephrase a generated response, so we warn the user
+      // and give them the option to hide it entirely.
+      const toxicDetections = (decision.detections || [])
+        .filter((d) => d.type === "TOXIC_LANGUAGE")
+        .map((d) => d.valuePreview)
+        .join(", ");
+      const bannerMsg = toxicDetections
+        ? `This AI response contains potentially offensive language (${toxicDetections}). Review before using.`
+        : "This AI response contains potentially offensive or aggressive language. Review before using.";
+      showResponseWarningBanner(node, bannerMsg, (keepVisible) => {
+        if (!keepVisible) {
+          maskResponseNode(node, "Response hidden — potentially offensive content.");
+        }
+      });
+      insertResponseNotice(node, {
+        icon: "💬",
+        message: bannerMsg,
+        color: "#5b21b6",
+        bgColor: "#f5f3ff",
+        borderColor: "#ddd6fe",
+      });
+      return;
+    }
   }
 
   async function scanResponses() {
     const nodes = getResponseCandidates();
-    await Promise.all(nodes.map((node) => analyzeResponseNode(node)));
+    if (nodes.length === 0) return;
+    // Process nodes sequentially to avoid flooding the API with parallel calls.
+    for (const node of nodes) {
+      await analyzeResponseNode(node).catch(() => {});
+    }
   }
 
   function scheduleResponseScan() {
     if (extensionContextInvalid || !getActiveSiteConfig()) return;
-    if (responseScanTimer) {
-      clearTimeout(responseScanTimer);
-    }
+    if (responseScanTimer) clearTimeout(responseScanTimer);
+    // Use 700ms debounce (up from 350ms) so streaming responses have time to
+    // finish before we analyse them — avoids calling the API on every token.
     responseScanTimer = setTimeout(() => {
       scanResponses().catch((error) => {
-        console.warn("Confidential Agent response scan failed:", error);
+        console.warn("[Confidential Agent] Response scan error:", error);
       });
-    }, 350);
+    }, 700);
   }
 
   document.addEventListener(

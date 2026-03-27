@@ -5,6 +5,17 @@ The omni-moderation-latest model accepts image payloads (base64 data-URIs)
 and returns a structured breakdown of flagged content categories with confidence
 scores.  This is OpenAI's purpose-built moderation endpoint — faster and cheaper
 than the chat-completion endpoint for this use-case.
+
+Safe mode (enabled by default via SAFE_MODE_ENABLED env var):
+  When enabled the moderator inspects the raw `category_scores` for the "sexual"
+  category even when the API did NOT flag it.  This catches partial nudity such
+  as lingerie or underwear images that score below the API's internal threshold
+  but are still inappropriate for younger audiences.  The threshold is
+  configurable via SAFE_MODE_SEXUAL_THRESHOLD (default 0.06 = 6 %).
+
+  Drugs and recreational substances are covered by the "illicit" and
+  "illicit/violent" categories; their risk weights are intentionally high to
+  protect general audiences.
 """
 
 from datetime import datetime, timezone
@@ -18,19 +29,21 @@ from app.core.policy_engine import PolicyDecision
 # A single hit takes the weight of the highest-scoring category.
 # 100 = unconditional BLOCK (e.g. CSAM).
 _CATEGORY_WEIGHTS: dict[str, int] = {
-    "sexual/minors": 100,  # Absolute BLOCK — no override.
+    "sexual/minors": 100,   # Absolute BLOCK — no override.
     "sexual": 85,
-    "violence/graphic": 80,
+    "violence/graphic": 82,
     "self-harm/intent": 80,
-    "self-harm/instructions": 75,
-    "hate/threatening": 75,
-    "illicit/violent": 72,
+    "self-harm/instructions": 78,
+    "hate/threatening": 76,
+    "illicit/violent": 74,  # Drugs + violence combination.
     "self-harm": 70,
-    "violence": 65,
-    "hate": 60,
-    "harassment/threatening": 60,
-    "illicit": 55,
+    "violence": 68,         # Raised vs previous 65 — violence is never harmless.
+    "hate": 62,
+    "harassment/threatening": 62,
+    "illicit": 72,          # Drugs, narcotics, dangerous substances — always BLOCK.
     "harassment": 45,
+    # Virtual category inserted when safe-mode catches low-score nudity.
+    "partial_nudity": 42,   # WARN territory; user decides.
 }
 
 _CATEGORY_LABELS: dict[str, str] = {
@@ -45,8 +58,10 @@ _CATEGORY_LABELS: dict[str, str] = {
     "hate/threatening": "Threatening hate content",
     "harassment": "Harassment",
     "harassment/threatening": "Threatening harassment",
-    "illicit": "Illicit content",
+    "illicit": "Illicit / drug-related content",
     "illicit/violent": "Violent illicit content",
+    # Virtual safe-mode category.
+    "partial_nudity": "Partial nudity / revealing content",
 }
 
 
@@ -122,7 +137,25 @@ def run_image_moderator(
     if result is None:
         return _fail_open("Image moderation API unavailable — upload allowed (fail-open).")
 
-    if not result.get("flagged", False):
+    categories: dict[str, bool] = result.get("categories", {})
+    scores: dict[str, float] = result.get("category_scores", {})
+
+    # Collect API-flagged categories.
+    hit_categories: list[str] = [cat for cat, flagged in categories.items() if flagged]
+
+    # ── Safe-mode partial nudity check ───────────────────────────────────────
+    # Even when the API does NOT set categories["sexual"] = True, a non-trivial
+    # confidence score for "sexual" content can indicate partial nudity
+    # (lingerie, underwear, revealing clothing).  Flag it at a lower threshold
+    # so family / workplace deployments can protect younger audiences.
+    if (
+        settings.safe_mode_enabled
+        and "sexual" not in hit_categories
+        and scores.get("sexual", 0.0) >= settings.safe_mode_sexual_threshold
+    ):
+        hit_categories.append("partial_nudity")
+
+    if not result.get("flagged", False) and not hit_categories:
         return PolicyDecision(
             action="ALLOW",
             risk_score=0,
@@ -132,10 +165,6 @@ def run_image_moderator(
             created_at=datetime.now(timezone.utc).isoformat(),
         )
 
-    categories: dict[str, bool] = result.get("categories", {})
-    scores: dict[str, float] = result.get("category_scores", {})
-
-    hit_categories = [cat for cat, flagged in categories.items() if flagged]
     if not hit_categories:
         return _fail_open("Image flagged but no specific category identified.")
 
@@ -143,7 +172,13 @@ def run_image_moderator(
         {
             "type": f"IMAGE_{cat.upper().replace('/', '_').replace('-', '_')}",
             "valuePreview": _CATEGORY_LABELS.get(cat, cat.replace("/", " — ").title()),
-            "confidence": round(float(scores.get(cat, 0.8)), 3),
+            # For the virtual partial_nudity category use the raw sexual score.
+            "confidence": round(
+                float(scores.get("sexual", 0.0))
+                if cat == "partial_nudity"
+                else float(scores.get(cat, 0.8)),
+                3,
+            ),
         }
         for cat in hit_categories
     ]
@@ -154,7 +189,9 @@ def run_image_moderator(
     reasons: list[str] = []
     for cat in hit_categories:
         label = _CATEGORY_LABELS.get(cat, cat)
-        pct = f"{scores.get(cat, 0.0):.0%}"
+        # Use the raw sexual score as confidence for the virtual safe-mode category.
+        raw_score = scores.get("sexual" if cat == "partial_nudity" else cat, 0.0)
+        pct = f"{raw_score:.0%}"
         reasons.append(f"Detected: {label} (confidence {pct})")
 
     # Absolute BLOCK for CSAM — add unconditional header reason.
@@ -164,6 +201,13 @@ def run_image_moderator(
     elif risk_score >= 70:
         action = "BLOCK"
         reasons.insert(0, "High-severity sensitive content detected in image.")
+    elif "partial_nudity" in hit_categories:
+        action = "WARN"
+        reasons.insert(
+            0,
+            "Image may contain partial nudity (revealing clothing or underwear) — "
+            "review before sharing in professional or family contexts.",
+        )
     else:
         action = "WARN"
         reasons.insert(0, "Potentially sensitive image content detected.")

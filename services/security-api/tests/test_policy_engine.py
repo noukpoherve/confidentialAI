@@ -124,6 +124,41 @@ def test_avs_phone_matches_formatted_number() -> None:
     assert any(d["type"] == "PHONE" for d in result.detections)
 
 
+def test_avs_phone_matches_compact_e164() -> None:
+    """E.164 without spaces (e.g. +33612345678) must be detected."""
+    result = analyze_response("Mobile +33612345678 only.")
+    assert any(d["type"] == "PHONE" for d in result.detections)
+
+
+def test_swift_bic_detected_alongside_iban() -> None:
+    """ISO 9362 BIC/SWIFT codes must be flagged when country code is valid."""
+    result = analyze_prompt(
+        "IBAN FR7630006000011234567890189, SWIFT BNPAFRPPXXX pour le virement."
+    )
+    types = {d["type"] for d in result.detections}
+    assert "IBAN" in types
+    assert "SWIFT_BIC" in types
+
+
+def test_hr_fiche_detects_phone_swift_and_legal_context() -> None:
+    """Realistic HR employee file: PII + SWIFT + compact phone + HR/health phrases."""
+    prompt = (
+        "Fiche salarié : Email professionnel : marie.dupont@entreprise-example.fr\n"
+        "Téléphone : +33612345678\n"
+        "IBAN : FR7630006000011234567890189\n"
+        "SWIFT/BIC : BNPAFRPPXXX\n"
+        "La collaboratrice est en arrêt maladie depuis le 3 février ; le médecin du travail "
+        "a recommandé un aménagement de poste."
+    )
+    result = analyze_prompt(prompt)
+    types = {d["type"] for d in result.detections}
+    assert "EMAIL" in types
+    assert "PHONE" in types
+    assert "IBAN" in types
+    assert "SWIFT_BIC" in types
+    assert "LEGAL_HR" in types
+
+
 def test_samsung_combined_data_prompt() -> None:
     """
     Samsung 2023 scenario: a single prompt combines source code, a secret key,

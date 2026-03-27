@@ -39,7 +39,7 @@ def _build_incident_payload(
     graph_trace: list[str],
 ) -> dict:
     tenant_id = metadata.get("tenantId")
-    return {
+    payload: dict = {
         "incidentType": incident_type,
         "requestId": request_id,
         "platform": platform,
@@ -58,6 +58,10 @@ def _build_incident_payload(
             :300
         ],
     }
+    # Store rephrase suggestions when the toxicity analyzer triggered.
+    if hasattr(response, "suggestions") and response.suggestions:
+        payload["suggestions"] = response.suggestions
+    return payload
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
@@ -73,6 +77,7 @@ def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
         redactions=decision.redactions,
         createdAt=decision.created_at,
         graphTrace=execution.graph_trace,
+        suggestions=decision.suggestions,
     )
     incident = _build_incident_payload(
         request_id=request.requestId,
@@ -106,6 +111,7 @@ def validate_response(request: ValidateResponseRequest) -> ValidateResponseRespo
         redactions=decision.redactions,
         createdAt=decision.created_at,
         graphTrace=execution.graph_trace,
+        suggestions=decision.suggestions,
     )
     incident = _build_incident_payload(
         request_id=request.requestId,

@@ -8,6 +8,7 @@ def test_prompt_graph_returns_policy_decision() -> None:
     decision = execution.decision
     assert decision.action == "BLOCK"
     assert decision.risk_score >= 40
+    # BLOCK decisions skip the toxicity analyzer — trace ends at "ac".
     assert execution.graph_trace == ["afe", "llm_classifier", "ac"]
 
 
@@ -18,7 +19,8 @@ def test_response_graph_detects_sensitive_output() -> None:
     decision = execution.decision
     assert decision.action in {"WARN", "ANONYMIZE", "BLOCK"}
     assert len(decision.detections) >= 1
-    assert execution.graph_trace == ["avs", "llm_classifier", "ac"]
+    # BLOCK skips toxicity_analyzer; WARN/ANONYMIZE includes it when enabled.
+    assert execution.graph_trace[:3] == ["avs", "llm_classifier", "ac"]
 
 
 def test_avs_detects_indirect_injection() -> None:
@@ -36,6 +38,7 @@ def test_avs_detects_indirect_injection() -> None:
     assert decision.risk_score >= 70
     detected_types = {d["type"] for d in decision.detections}
     assert "PROMPT_INJECTION" in detected_types
+    # BLOCK decisions skip the toxicity analyzer — trace ends at "ac".
     assert execution.graph_trace == ["avs", "llm_classifier", "ac"]
 
 

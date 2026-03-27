@@ -59,6 +59,17 @@ class Settings(BaseModel):
     user_settings_collection: str = os.getenv("MONGODB_USER_SETTINGS_COLLECTION", "user_settings")
     site_signals_collection: str = os.getenv("MONGODB_SITE_SIGNALS_COLLECTION", "site_signals")
     site_signals_list_limit: int = int(os.getenv("SITE_SIGNALS_LIST_LIMIT", "200"))
+    # Safe mode: stricter image moderation — catches partial nudity (lingerie,
+    # underwear) at lower confidence scores to protect younger audiences.
+    safe_mode_enabled: bool = os.getenv("SAFE_MODE_ENABLED", "true").lower() == "true"
+    # Minimum raw sexual-content score from the moderation API that triggers a
+    # WARN in safe mode.  Default 0.06 (6 %) catches lingerie-level content.
+    safe_mode_sexual_threshold: float = float(os.getenv("SAFE_MODE_SEXUAL_THRESHOLD", "0.06"))
+    # Toxicity analyzer: LLM-based detection of vulgar / aggressive language
+    # with 3-suggestion rephrasing to promote healthy communication.
+    toxicity_analyzer_enabled: bool = (
+        os.getenv("TOXICITY_ANALYZER_ENABLED", _llm_enabled_default).lower() == "true"
+    )
 
 
 settings = Settings()

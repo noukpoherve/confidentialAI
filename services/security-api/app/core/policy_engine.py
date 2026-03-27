@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from app.core.config import settings
@@ -13,12 +13,18 @@ class PolicyDecision:
     detections: list[dict]
     redactions: list[dict]
     created_at: str
+    # Populated by the toxicity analyzer when action == SUGGEST_REPHRASE.
+    # Contains up to 3 LLM-generated alternatives that preserve intent
+    # while removing offensive or aggressive language.
+    suggestions: list[str] = field(default_factory=list)
 
 
 RISK_WEIGHTS: dict[str, int] = {
     "EMAIL": 15,
     "PHONE": 12,
     "IBAN": 35,
+    "SWIFT_BIC": 30,
+    "LEGAL_HR": 16,
     "API_KEY": 45,
     "PASSWORD": 50,
     "TOKEN": 40,
@@ -26,6 +32,15 @@ RISK_WEIGHTS: dict[str, int] = {
     "SOURCE_CODE": 20,
     # A single injection attempt always crosses the BLOCK threshold (score >= 70).
     "PROMPT_INJECTION": 70,
+    # TOXIC_LANGUAGE has weight 0: it must NOT affect the risk score or the
+    # security decision.  Its sole role is to appear in the detections list so
+    # that the toxicity_analyzer LangGraph node can read it as a signal and
+    # generate rephrase suggestions.  The SUGGEST_REPHRASE action is set
+    # exclusively by run_toxicity_analyzer(), never by the policy engine.
+    "TOXIC_LANGUAGE": 0,
+    # Link to a known adult or violent website embedded in the prompt text.
+    # 55 puts a single hit in WARN territory; multiple hits will BLOCK.
+    "HARMFUL_URL": 55,
 }
 
 # When the AI model *reproduces* sensitive data in its output, the risk is higher
@@ -35,6 +50,8 @@ RESPONSE_RISK_MULTIPLIERS: dict[str, float] = {
     "EMAIL": 1.5,        # 15 → 22 — model leaking an email crosses WARN alone
     "PHONE": 0.8,        # 12 → 10 — de-emphasise; still noisy even after regex fix
     "IBAN": 1.5,         # 35 → 52 — financial data leak is high risk
+    "SWIFT_BIC": 1.5,
+    "LEGAL_HR": 1.2,
     "API_KEY": 2.0,      # 45 → 90 — always BLOCK; model must never reproduce a secret
     "PASSWORD": 2.0,     # 50 → 100 — always BLOCK
     "TOKEN": 2.0,        # 40 → 80 — always BLOCK

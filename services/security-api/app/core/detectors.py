@@ -21,6 +21,8 @@ DETECTOR_PATTERNS: dict[str, re.Pattern[str]] = {
         r"|(?<!\d)\(\d{2,4}\)[\s\-]?\d{3,4}[\s\-]\d{4}(?!\d)"                       # (555) 555-5555
         r"|\b\d{3}[\s.\-]\d{3}[\s.\-]\d{4}\b"                                        # 555-555-5555
         r"|\b\d{2}[\s.\-]\d{2}[\s.\-]\d{2}[\s.\-]\d{2}[\s.\-]\d{2}\b"              # FR: 06 12 34 56 78
+        # E.164 compact (no separators), e.g. +33612345678 — max 15 digits after '+'
+        r"|(?<!\d)\+\d{10,15}(?!\d)"
         r")"
     ),
     "IBAN": re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{10,30}\b"),
@@ -34,6 +36,65 @@ DETECTOR_PATTERNS: dict[str, re.Pattern[str]] = {
     ),
     # Simple heuristic: detect common source-code signatures.
     "SOURCE_CODE": re.compile(r"(?m)^\s*(?:def |class |function |import |from .* import )"),
+    # French / English phrases suggesting identifiable HR, health, or family context
+    # (deterministic complement to the LLM LEGAL_HR classifier).
+    "LEGAL_HR": re.compile(
+        r"(?i)"
+        r"(?:"
+        r"(?:l['\u2019]\s*)?arrêt\s+(?:maladie|de\s+travail)"
+        r"|médecin\s+du\s+travail"
+        r"|médecine\s+du\s+travail"
+        r"|aménagement\s+de\s+poste"
+        r"|accident\s+du\s+travail"
+        r"|(?:données?\s+de\s+santé|dossier\s+médical|secret\s+médical)"
+        r"|visite\s+médicale"
+        r"|indemnité\s+journalière"
+        r"|congé\s+(?:maternité|paternité)"
+        r"|invalidité\s+(?:professionnelle|permanente|partielle)"
+        r"|reclassement\s+professionnel"
+        r"|fiche\s+salarié"
+        r"|situation\s+familiale"
+        r"|garde\s+alternée"
+        r"|pension\s+alimentaire"
+        r"|autorité\s+parentale"
+        r"|acte\s+de\s+naissance"
+        r"|ressources?\s+humaines\s+confidentiel(?:le|les)?"
+        r"|occupational\s+health\s+(?:physician|doctor|assessment)"
+        r"|sick\s+leave|family\s+leave|parental\s+leave"
+        r"|medical\s+leave|disability\s+accommodation"
+        r")"
+    ),
+    # ── Harmful / adult domain links ─────────────────────────────────────────
+    "HARMFUL_URL": re.compile(
+        r"https?://(?:www\.)?"
+        r"(?:pornhub|xvideos|xhamster|youporn|redtube|brazzers|naughtyamerica"
+        r"|xnxx|tube8|thumbzilla|chaturbate|myfreecams|cam4|stripchat"
+        r"|livejasmin|bongacams|onlyfans|manyvids|fancentro"
+        r"|bestgore|goregrish|shockgore|liveleak|rotten|watchpeopledie"
+        r"|sickchirpse|ogrish|nsfl)"
+        r"\.(?:com|net|org|tv|xxx)(?:[/\?#][^\s]*)?",
+        re.IGNORECASE,
+    ),
+    # ── Profanity / toxic language quick-filter ──────────────────────────────
+    # Regex matches the most unambiguous profanity in English and French.
+    # This is intentionally conservative to minimise false positives.
+    # The LLM-based toxicity analyzer handles nuanced aggressive tone.
+    "TOXIC_LANGUAGE": re.compile(
+        r"(?i)\b(?:"
+        # English
+        r"f+u+c+k+(?:ing?|er?|ed|s|wit)?|s+h+i+t+(?:ty|ter?|s)?"
+        r"|b+i+t+c+h+(?:es|y|in)?|a+s+s+h+o+l+e+|c+u+n+t+"
+        r"|c+o+c+k+s+u+c+k+(?:er?|ing)?|m+o+t+h+e+r+f+u+c+k+(?:er?|ing)?"
+        r"|f+a+g+g+o+t+|n+i+g+g+e+r+|w+h+o+r+e+|s+l+u+t+"
+        r"|d+i+c+k+h+e+a+d+|j+a+c+k+a+s+s+|b+a+s+t+a+r+d+"
+        # French
+        r"|m+e+r+d+e+|p+u+t+a+i+n+|c+o+n+n+a+r+d+(?:e)?"
+        r"|s+a+l+o+p+e+|e+n+c+u+l+[eé]+(?:e)?|n+i+q+u+e+r?"
+        r"|s+a+l+a+u+d+|p+u+t+e+|b+[aâ]+t+a+r+d+(?:e)?"
+        r"|c+o+u+i+l+l+e+|f+o+u+t+r+e+"
+        r")\b",
+        re.UNICODE,
+    ),
     # Prompt injection / indirect instruction hijacking patterns.
     # Covers the Slack AI 2024 attack vector: data embedded in responses that
     # tries to override the model's prior instructions or exfiltrate conversation content.
@@ -54,6 +115,36 @@ DETECTOR_PATTERNS: dict[str, re.Pattern[str]] = {
         r")"
     ),
 }
+
+# ISO 3166-1 alpha-2 from IANA tz `iso3166.tab` (eggert/tz); XK added for Kosovo banking.
+_ISO_ALPHA2 = (
+    frozenset(
+        "AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ "
+        "CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR "
+        "GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP "
+        "KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT "
+        "MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW "
+        "SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG "
+        "UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW".split()
+    )
+    | {"XK"}
+)
+
+_SWIFT_BIC_PATTERN = re.compile(
+    r"\b[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?\b",
+    re.IGNORECASE,
+)
+
+
+def _is_plausible_swift_bic(token_upper: str) -> bool:
+    if len(token_upper) not in (8, 11):
+        return False
+    if token_upper[4:6] not in _ISO_ALPHA2:
+        return False
+    if re.fullmatch(r"[0-9A-F]+", token_upper):
+        return False
+    return True
+
 
 REDACTED_PLACEHOLDER_PATTERN = re.compile(r"\[REDACTED_[A-Z_]+\]")
 
@@ -85,6 +176,20 @@ def detect_sensitive_content(prompt: str) -> list[DetectorHit]:
                     confidence=0.8 if hit_type != "SOURCE_CODE" else 0.65,
                 )
             )
+
+    for match in _SWIFT_BIC_PATTERN.finditer(prompt):
+        raw_value = match.group(0)
+        if REDACTED_PLACEHOLDER_PATTERN.search(raw_value):
+            continue
+        if not _is_plausible_swift_bic(raw_value.upper()):
+            continue
+        hits.append(
+            DetectorHit(
+                hit_type="SWIFT_BIC",
+                raw_value=raw_value,
+                confidence=0.85,
+            )
+        )
 
     return hits
 

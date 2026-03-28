@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from app.core.config import settings
+from app.stores.vector_store import maybe_index_incident_from_payload
 
 try:
     from pymongo import MongoClient
@@ -24,7 +25,13 @@ class InMemoryIncidentStore:
     items: list[dict] = field(default_factory=list)
 
     def save_incident(self, incident: dict) -> None:
-        self.items.insert(0, dict(incident))
+        document = dict(incident)
+        vector_text = document.pop("vectorSourceText", None)
+        self.items.insert(0, document)
+        try:
+            maybe_index_incident_from_payload(vector_text, document)
+        except Exception:
+            pass
 
     def list_incidents(self, limit: int) -> list[dict]:
         return self.items[: max(limit, 0)]
@@ -40,7 +47,12 @@ class MongoIncidentStore:
 
     def save_incident(self, incident: dict) -> None:
         document = dict(incident)
+        vector_text = document.pop("vectorSourceText", None)
         self.collection.insert_one(document)
+        try:
+            maybe_index_incident_from_payload(vector_text, document)
+        except Exception:
+            pass
 
     def list_incidents(self, limit: int) -> list[dict]:
         cursor = (

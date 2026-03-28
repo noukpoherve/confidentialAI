@@ -11,5 +11,16 @@ services:
       - mongo_data:/data/db
       - ../mongodb/init.js:/docker-entrypoint-initdb.d/init.js:ro
 
+  qdrant:
+    image: qdrant/qdrant:v1.12.5
+    container_name: confidential-agent-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
 volumes:
   mongo_data:
+  qdrant_data:

@@ -70,6 +70,19 @@ class Settings(BaseModel):
     toxicity_analyzer_enabled: bool = (
         os.getenv("TOXICITY_ANALYZER_ENABLED", _llm_enabled_default).lower() == "true"
     )
+    # Qdrant + embeddings: skip LLM classifier when a prompt is semantically
+    # similar to a past BLOCK/WARN incident (fail-open if Qdrant/embeddings fail).
+    vector_search_enabled: bool = os.getenv("VECTOR_SEARCH_ENABLED", "false").lower() == "true"
+    qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333")
+    # Qdrant Cloud (and secured clusters) require an API key; local Docker usually omits it.
+    qdrant_api_key: str = os.getenv("QDRANT_API_KEY", "")
+    qdrant_grpc_port: int = int(os.getenv("QDRANT_GRPC_PORT", "6334"))
+    qdrant_prefer_grpc: bool = os.getenv("QDRANT_PREFER_GRPC", "false").lower() == "true"
+    qdrant_collection: str = os.getenv("QDRANT_COLLECTION", "confidential_agent_incidents")
+    embedding_model: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    embedding_dimensions: int = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
+    vector_match_min_score: float = float(os.getenv("VECTOR_MATCH_MIN_SCORE", "0.88"))
+    vector_source_max_chars: int = int(os.getenv("VECTOR_SOURCE_MAX_CHARS", "4000"))
 
 
 settings = Settings()

@@ -1,3 +1,4 @@
+from app.core.config import settings
 from app.agents.orchestrator import analyze_prompt_with_agents, validate_response_with_agents
 
 
@@ -9,7 +10,7 @@ def test_prompt_graph_returns_policy_decision() -> None:
     assert decision.action == "BLOCK"
     assert decision.risk_score >= 40
     # BLOCK decisions skip the toxicity analyzer — trace ends at "ac".
-    assert execution.graph_trace == ["afe", "llm_classifier", "ac"]
+    assert execution.graph_trace == ["afe", "vector_search", "llm_classifier", "ac"]
 
 
 def test_response_graph_detects_sensitive_output() -> None:
@@ -109,3 +110,22 @@ def test_prompt_graph_semantic_detection_via_llm_classifier(monkeypatch) -> None
     )
     assert any(d["type"] == "LLM_SENSITIVE" for d in decision.detections)
     assert any("LLM classifier:" in r for r in decision.reasons)
+
+
+def test_prompt_graph_skips_llm_classifier_on_vector_cache_hit(monkeypatch) -> None:
+    """Strong Qdrant match short-circuits the LLM classifier node."""
+    monkeypatch.setattr(settings, "vector_search_enabled", True)
+    from app.agents import vector_search_node
+
+    monkeypatch.setattr(
+        vector_search_node,
+        "search_similar_incident",
+        lambda _text: (0.95, {"action": "BLOCK", "riskScore": 90}),
+    )
+    execution = analyze_prompt_with_agents(
+        prompt="benign-looking text that still matches a past incident",
+        user_consent=False,
+    )
+    assert "llm_classifier" not in execution.graph_trace
+    assert execution.graph_trace == ["afe", "vector_search", "ac"]
+    assert execution.decision.action == "BLOCK"

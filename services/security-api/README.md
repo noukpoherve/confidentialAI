@@ -47,6 +47,26 @@ curl -X POST http://localhost:8080/v1/analyze \
 - agent roles are enabled as pluggable modules (`AFE`, `AVS`, `ASI`, `AC`)
 - prompt and response orchestration are executed through LangGraph state graphs
 
+## Optional Qdrant (semantic similarity)
+
+When enabled, the prompt pipeline runs **`AFE` → `vector_search` → `llm_classifier` (skipped on strong match) → `AC` → …**. Embeddings use OpenAI-compatible **`text-embedding-3-small`** via the same API base/key as the LLM layer. Past **`BLOCK`** / **`WARN`** prompt incidents are indexed after save (Mongo still stores only redacted previews; raw text for indexing is not persisted in Mongo).
+
+- **Fail-open**: if Qdrant or embeddings fail, the API falls back to the normal path (LLM classifier unchanged).
+- **Local Docker**: `docker compose -f infra/docker/docker-compose.yml up qdrant -d` then set `QDRANT_URL=http://localhost:6333`.
+- **Qdrant Cloud**: set `QDRANT_URL` to the cluster HTTPS URL and `QDRANT_API_KEY` from the cloud dashboard.
+
+Relevant variables (see `.env.example`):
+
+| Variable | Role |
+|----------|------|
+| `VECTOR_SEARCH_ENABLED` | `true` to activate the node and incident indexing |
+| `QDRANT_URL` | HTTP(S) endpoint (local or cloud) |
+| `QDRANT_API_KEY` | Required for Qdrant Cloud; omit for local Docker |
+| `QDRANT_COLLECTION` | Collection name (default `confidential_agent_incidents`) |
+| `EMBEDDING_MODEL` | Default `text-embedding-3-small` |
+| `VECTOR_MATCH_MIN_SCORE` | Minimum cosine similarity to reuse a past decision (default `0.88`) |
+| `QDRANT_PREFER_GRPC` / `QDRANT_GRPC_PORT` | Optional gRPC client instead of HTTP |
+
 ## Optional Telegram alerts
 
 Set the following env vars to enable alerting for critical incidents:

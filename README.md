@@ -24,7 +24,8 @@ The project is split into two layers:
 2. Server security layer
    - FastAPI prompt analysis API
    - deterministic rules engine with risk score
-   - agent orchestration via **LangGraph** (`AFE`, `AVS`, `ASI`, `AC` + optional LLM classifier)
+   - agent orchestration via **LangGraph** (`AFE`, `AVS`, `ASI`, `AC`; prompt path includes optional `vector_search` then optional LLM classifier)
+   - optional **Qdrant** semantic cache: similar past `BLOCK`/`WARN` prompts can skip the LLM classifier (see `services/security-api/README.md`)
    - MongoDB incident storage (in-memory fallback for local dev)
    - JWT auth + per-user settings (SaaS-ready foundation)
    - site telemetry from the extension (`/v1/site-signals`)
@@ -42,7 +43,7 @@ confidential-Agent/
   packages/
     shared-types/           # Shared TypeScript contracts
   infra/
-    docker/                 # Local docker-compose
+    docker/                 # Local docker-compose (MongoDB + optional Qdrant)
     mongodb/                # Mongo init and indexes
   docs/                     # Detailed documentation
   scripts/                  # Utility scripts (next phase)
@@ -75,7 +76,7 @@ Recommended order on a fresh machine: **MongoDB (optional) → API → dashboard
 - Node.js 20+
 - Python 3.11 to 3.13
 - [uv](https://docs.astral.sh/uv/) (recommended for this repo; see **Alternative without uv** below)
-- Docker (optional, recommended for MongoDB)
+- Docker (optional, recommended for MongoDB and local Qdrant)
 
 ### 4.0 Environment (API)
 
@@ -86,12 +87,19 @@ cp services/security-api/.env.example services/security-api/.env
 # Edit services/security-api/.env as needed (Mongo URL, LLM keys, etc.)
 ```
 
-### 4.1 Run MongoDB (optional)
+### 4.1 Run MongoDB and optional Qdrant (Docker)
 
 ```bash
 cd infra/docker
-docker compose up -d
+docker compose up -d              # MongoDB + Qdrant
+# or only one service:
+# docker compose up mongo -d
+# docker compose up qdrant -d
 ```
+
+**Qdrant** is optional. Enable it in `services/security-api/.env` with `VECTOR_SEARCH_ENABLED=true` and `QDRANT_URL` (local: `http://localhost:6333`). For **Qdrant Cloud**, set the cluster HTTPS URL and `QDRANT_API_KEY`. Details: `services/security-api/README.md`.
+
+When Qdrant is running, you can open `http://localhost:6333/dashboard` or `curl http://localhost:6333/collections` to verify connectivity.
 
 ### 4.2 Run the API (recommended: uv)
 
@@ -148,6 +156,7 @@ Open `http://localhost:3000`.
 | FastAPI `/v1/validate-response` | Done | Response validation path (AVS-oriented) |
 | Agents `AFE` / `AVS` / `ASI` / `AC` | Done | Wired in `app/agents/` + `orchestrator.py` |
 | Optional LLM classifier | Optional | Env-driven; see `services/security-api/README.md` |
+| Optional Qdrant + embeddings | Optional | Semantic shortcut before LLM (`text-embedding-3-small`); indexes `BLOCK`/`WARN` prompt incidents; fail-open if unavailable |
 | Incidents store | Done | Mongo when available; in-memory fallback |
 | Auth (`/v1/auth/*`) + user settings | Done | JWT; settings for extension targeting |
 | Site signals (`/v1/site-signals/*`) | Done | Extension → API telemetry; dashboard summary |
@@ -161,6 +170,7 @@ Open `http://localhost:3000`.
 - End-to-end prompt analysis with **graph trace** returned on analyze responses
 - Engineering standards: `docs/ENGINEERING_STANDARDS.md`
 - Workflow / Notion-oriented guide: `docs/NOTION_WORKFLOW_GUIDE.md`
+- Qdrant / vector search (Notion-ready): `docs/NOTION_QDRANT_VECTOR_SEARCH.md`
 - Implementation guide: `docs/IMPLEMENTATION_GUIDE.md`
 - Architecture: `docs/ARCHITECTURE.md`
 
@@ -172,4 +182,4 @@ Open `http://localhost:3000`.
 4. Deeper IDE / non-browser integrations (proxy or native extensions)
 5. Extended alerting and retention policies for compliance
 
-See also `services/security-api/README.md` for API env vars (LLM, Telegram, Mongo).
+See also `services/security-api/README.md` for API env vars (LLM, Telegram, Mongo, Qdrant).

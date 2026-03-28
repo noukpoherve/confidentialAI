@@ -14,6 +14,7 @@ flowchart LR
     D --> E
     API --> I[Incident Store]
     I --> M[(MongoDB or In-Memory Fallback)]
+    API --> Q[(Optional Qdrant)]
     API --> T[Telegram Alert Hook]
     E -->|Optional response check| API
 ```
@@ -26,9 +27,11 @@ Two state graphs are compiled:
 
 1. Prompt graph
    - `afe` node: input filtering analysis
+   - `vector_search` node (optional): Qdrant similarity vs past BLOCK/WARN prompts; may skip `llm_classifier` on strong match
    - `llm_classifier` node: optional OpenAI-compatible sensitive-text classifier (fail-open)
    - `ac` node: arbitration
-   - trace example: `["afe", "llm_classifier", "ac"]`
+   - trace example (vector search on, no shortcut): `["afe", "vector_search", "llm_classifier", "ac"]`
+   - trace example (vector shortcut): `["afe", "vector_search", "ac"]`
 
 2. Response graph
    - `avs` node: AI response validation
@@ -48,11 +51,13 @@ Endpoint: `POST /v1/analyze`
 flowchart TD
     A[Request: prompt] --> B[LangGraph Prompt Graph]
     B --> C[AFE node]
-    C --> D[LLM classifier node optional]
+    C --> VS[vector_search optional]
+    VS --> D[LLM classifier optional]
     D --> E[AC node]
     E --> F[AnalyzeResponse with graphTrace]
     F --> G[Persist incident]
     G --> H[Optional Telegram alert]
+    G --> I[Optional Qdrant index on BLOCK/WARN]
 ```
 
 ### B) Response validation workflow
@@ -81,6 +86,7 @@ Endpoint: `GET /v1/incidents`
 ## 4) Agent responsibilities
 
 - `AFE` (Input Filtering Agent): prompt-level risk decision
+- `vector_search` (optional): Qdrant + embeddings; may escalate from similarity to past incidents and skip `llm_classifier` (see `docs/NOTION_QDRANT_VECTOR_SEARCH.md`)
 - `AVS` (AI Validation Sentinel): response-level risk decision
 - `llm_classifier`: optional second opinion via chat-completions API (see `LLM_CLASSIFIER_*` env vars in `services/security-api/README.md`)
 - `AC` (Arbitration Controller): confirms/adjusts ambiguous decisions
@@ -121,6 +127,12 @@ Run only LLM classifier unit tests:
 uv run pytest -q tests/test_llm_classifier.py
 ```
 
+Run vector search / Qdrant-related unit tests:
+
+```bash
+uv run pytest -q tests/test_vector_search.py
+```
+
 Manual API checks (after starting server):
 
 - `GET /health`
@@ -130,13 +142,13 @@ Manual API checks (after starting server):
 
 Expected:
 
-- analyze response includes `graphTrace: ["afe", "llm_classifier", "ac"]`
-- validate-response includes `graphTrace: ["avs", "llm_classifier", "ac"]`
+- analyze response includes `graphTrace` starting with `["afe", "vector_search", "llm_classifier", "ac"]` (or `["afe", "vector_search", "ac"]` if the LLM classifier was skipped after a vector match)
+- validate-response includes `graphTrace: ["avs", "llm_classifier", "ac"]` (response pipeline has no `vector_search` node)
 - incidents include `incidentType` and `graphTrace`
 
 ## 7) Current limits and next increment
 
-`AFE` / `AVS` still use deterministic policy logic; the optional `llm_classifier` adds model-assisted escalation in fail-open mode.
+`AFE` / `AVS` still use deterministic policy logic; the optional `vector_search` layer can skip the `llm_classifier` when Qdrant finds a close match to a prior BLOCK/WARN prompt; the optional `llm_classifier` adds further model-assisted escalation in fail-open mode.
 
 Next increment ideas:
 

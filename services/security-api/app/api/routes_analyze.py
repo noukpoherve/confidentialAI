@@ -61,6 +61,13 @@ def _build_incident_payload(
     # Store rephrase suggestions when the toxicity analyzer triggered.
     if hasattr(response, "suggestions") and response.suggestions:
         payload["suggestions"] = response.suggestions
+    # Ephemeral: used only for Qdrant indexing — stripped before Mongo in incident_store.
+    if (
+        incident_type == "PROMPT"
+        and response.action in ("BLOCK", "WARN")
+        and settings.vector_search_enabled
+    ):
+        payload["vectorSourceText"] = raw_text[: settings.vector_source_max_chars]
     return payload
 
 

@@ -43,7 +43,7 @@ def test_analyze_persists_incident_and_lists_it(monkeypatch) -> None:
     body = response.json()
     assert body["action"] in {"ANONYMIZE", "WARN", "BLOCK", "ALLOW", "SUGGEST_REPHRASE"}
     # toxicity_analyzer is appended for non-BLOCK decisions.
-    assert body["graphTrace"][:3] == ["afe", "llm_classifier", "ac"]
+    assert body["graphTrace"][:4] == ["afe", "vector_search", "llm_classifier", "ac"]
 
     listed = client.get("/v1/incidents")
     assert listed.status_code == 200
@@ -54,7 +54,7 @@ def test_analyze_persists_incident_and_lists_it(monkeypatch) -> None:
     assert item["requestId"] == "req-api-test-1"
     assert item["tenantId"] == "tenant-a"
     assert item["incidentType"] == "PROMPT"
-    assert item["graphTrace"][:3] == ["afe", "llm_classifier", "ac"]
+    assert item["graphTrace"][:4] == ["afe", "vector_search", "llm_classifier", "ac"]
     assert "contentPreview" in item
     assert "alice@example.com" not in item["contentPreview"]
 
@@ -67,7 +67,7 @@ def test_analyze_stays_available_if_incident_store_fails(monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["requestId"] == "req-api-test-1"
-    assert body["graphTrace"][:3] == ["afe", "llm_classifier", "ac"]
+    assert body["graphTrace"][:4] == ["afe", "vector_search", "llm_classifier", "ac"]
 
 
 def test_validate_response_creates_response_incident(monkeypatch) -> None:

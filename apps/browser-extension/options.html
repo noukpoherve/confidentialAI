@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Confidential Agent — Settings</title>
+  <link rel="stylesheet" href="tailwind.output.css" />
+</head>
+<body class="bg-slate-50 text-slate-800 text-[14px] min-h-screen">
+
+<!-- ── Sticky header ──────────────────────────────────────────────────────── -->
+<header class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200 px-5 py-3.5 flex items-center justify-between">
+  <div class="flex items-center gap-2.5">
+    <div class="w-7 h-7 bg-indigo-600 rounded-[8px] flex items-center justify-center">
+      <svg class="w-4 h-4 stroke-white" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+    </div>
+    <span class="text-[15px] font-bold text-slate-900">Confidential Agent</span>
+    <span class="text-[11px] text-slate-400 font-medium">Settings</span>
+  </div>
+  <button id="saveBtn"
+    class="h-8 px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-[12.5px] font-semibold rounded-lg transition-colors shadow-sm">
+    Save settings
+  </button>
+</header>
+
+<main class="max-w-xl mx-auto px-4 py-6 flex flex-col gap-5">
+
+  <!-- ── Account ──────────────────────────────────────────────────────────── -->
+  <section class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+    <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
+      <div class="w-7 h-7 bg-violet-50 rounded-[7px] flex items-center justify-center shrink-0">
+        <svg class="w-[13px] h-[13px] stroke-violet-600" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+        </svg>
+      </div>
+      <div>
+        <div class="text-[14px] font-bold">Account</div>
+        <div class="text-[12px] text-slate-500">Sync your settings and platform list across devices</div>
+      </div>
+    </div>
+
+    <!-- Logged-out state -->
+    <div id="authFormArea" class="px-5 py-5 flex flex-col gap-4">
+      <p class="text-[12px] text-slate-500 leading-relaxed">
+        Sign in to save your platform list to your account. Each user manages their own platforms independently.
+      </p>
+      <div class="flex flex-col gap-2.5">
+        <input id="authEmail" type="email" placeholder="Email address"
+          class="h-9 px-3 border border-slate-200 rounded-lg text-[13px] bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all w-full" />
+        <input id="authPassword" type="password" placeholder="Password"
+          class="h-9 px-3 border border-slate-200 rounded-lg text-[13px] bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all w-full" />
+        <p id="authError" class="text-[11.5px] text-red-500 hidden"></p>
+        <div class="flex gap-2 pt-0.5">
+          <button id="loginBtn"
+            class="flex-1 h-8 bg-indigo-600 hover:bg-indigo-700 text-white text-[12.5px] font-semibold rounded-lg transition-colors">
+            Log in
+          </button>
+          <button id="signupBtn"
+            class="flex-1 h-8 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[12.5px] font-semibold rounded-lg transition-colors border border-slate-200">
+            Sign up
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Logged-in state (hidden by default) -->
+    <div id="authLoggedInArea" class="px-5 py-5 hidden">
+      <div class="flex items-center justify-between gap-4">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
+            <svg class="w-4 h-4 stroke-indigo-600" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+            </svg>
+          </div>
+          <div>
+            <div id="authUserEmail" class="text-[13px] font-semibold text-slate-800"></div>
+            <div class="flex items-center gap-1 mt-0.5">
+              <span class="w-1.5 h-1.5 bg-green-500 rounded-full inline-block"></span>
+              <span class="text-[11px] text-slate-500">Settings synced to your account</span>
+            </div>
+          </div>
+        </div>
+        <button id="logoutBtn"
+          class="h-7 px-3 text-[11.5px] font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+          Log out
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Connection ───────────────────────────────────────────────────────── -->
+  <section class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+    <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
+      <div class="w-7 h-7 bg-indigo-50 rounded-[7px] flex items-center justify-center shrink-0">
+        <svg class="w-[13px] h-[13px] stroke-indigo-600" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+        </svg>
+      </div>
+      <div>
+        <div class="text-[14px] font-bold">API Connection</div>
+        <div class="text-[12px] text-slate-500">Backend service URL</div>
+      </div>
+    </div>
+    <div class="px-5 py-5">
+      <label class="text-[12px] font-semibold text-slate-600 mb-1.5 block">Backend URL</label>
+      <input id="apiBaseUrl" type="url" placeholder="http://localhost:8080"
+        class="h-9 px-3 border border-slate-200 rounded-lg text-[13px] bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all w-full font-mono" />
+    </div>
+  </section>
+
+  <!-- ── Guardrail ─────────────────────────────────────────────────────────── -->
+  <section class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+    <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
+      <div class="w-7 h-7 bg-emerald-50 rounded-[7px] flex items-center justify-center shrink-0">
+        <svg class="w-[13px] h-[13px] stroke-emerald-600" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+      </div>
+      <div>
+        <div class="text-[14px] font-bold">Protection</div>
+        <div class="text-[12px] text-slate-500">Core guardrail and anonymization settings</div>
+      </div>
+    </div>
+    <div class="px-5 py-5 flex flex-col gap-4">
+      <!-- Guardrail toggle -->
+      <div class="flex items-start justify-between gap-4">
+        <div class="flex-1">
+          <div class="text-[13.5px] font-semibold">Enable guardrail</div>
+          <div class="text-[12px] text-slate-500 mt-1 leading-relaxed">
+            Master switch. When off, no analysis is performed on any platform.
+          </div>
+        </div>
+        <label class="relative w-11 h-6 cursor-pointer shrink-0 mt-0.5">
+          <input type="checkbox" id="guardrailEnabled" class="sr-only peer" checked />
+          <span class="absolute inset-0 bg-slate-200 rounded-full transition-colors peer-checked:bg-indigo-600"></span>
+          <span class="absolute top-[3px] left-[3px] w-[18px] h-[18px] bg-white rounded-full shadow transition-transform peer-checked:translate-x-[20px]"></span>
+        </label>
+      </div>
+      <hr class="border-slate-100" />
+      <!-- Auto-anonymize -->
+      <div class="flex items-start justify-between gap-4">
+        <div class="flex-1">
+          <div class="text-[13.5px] font-semibold">Auto-anonymize sensitive data</div>
+          <div class="text-[12px] text-slate-500 mt-1 leading-relaxed">
+            When on, the AI automatically redacts detected sensitive fragments instead of asking you to edit manually.
+          </div>
+        </div>
+        <label class="relative w-11 h-6 cursor-pointer shrink-0 mt-0.5">
+          <input type="checkbox" id="autoAnonymize" class="sr-only peer" />
+          <span class="absolute inset-0 bg-slate-200 rounded-full transition-colors peer-checked:bg-indigo-600"></span>
+          <span class="absolute top-[3px] left-[3px] w-[18px] h-[18px] bg-white rounded-full shadow transition-transform peer-checked:translate-x-[20px]"></span>
+        </label>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Image Moderation ──────────────────────────────────────────────────── -->
+  <section class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+    <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
+      <div class="w-7 h-7 bg-rose-50 rounded-[7px] flex items-center justify-center shrink-0">
+        <svg class="w-[13px] h-[13px] stroke-rose-600" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+        </svg>
+      </div>
+      <div>
+        <div class="text-[14px] font-bold">Image Moderation</div>
+        <div class="text-[12px] text-slate-500">Scan uploads for sensitive visual content</div>
+      </div>
+    </div>
+    <div class="px-5 py-5 flex flex-col gap-4">
+      <div class="flex items-start justify-between gap-4">
+        <div class="flex-1">
+          <div class="text-[13.5px] font-semibold">Enable image moderation</div>
+          <div class="text-[12px] text-slate-500 mt-1 leading-relaxed">
+            Every image you attach or paste is analyzed <em>before</em> upload. Detects sexual content,
+            graphic violence, hate symbols, self-harm and harassment. Works on AI platforms and social networks.
+          </div>
+        </div>
+        <label class="relative w-11 h-6 cursor-pointer shrink-0 mt-0.5">
+          <input type="checkbox" id="imageModerationEnabled" class="sr-only peer" checked />
+          <span class="absolute inset-0 bg-slate-200 rounded-full transition-colors peer-checked:bg-rose-500"></span>
+          <span class="absolute top-[3px] left-[3px] w-[18px] h-[18px] bg-white rounded-full shadow transition-transform peer-checked:translate-x-[20px]"></span>
+        </label>
+      </div>
+      <div class="flex gap-2.5 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+        <svg class="w-4 h-4 stroke-slate-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>
+        </svg>
+        <p class="text-[11.5px] text-slate-500 leading-relaxed">
+          Requires an OpenAI API key on the backend. Uses <strong>omni-moderation-latest</strong>.
+          If no key is configured the extension fails open — uploads are not blocked.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Protected Platforms ──────────────────────────────────────────────── -->
+  <section class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+    <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
+      <div class="w-7 h-7 bg-amber-50 rounded-[7px] flex items-center justify-center shrink-0">
+        <svg class="w-[13px] h-[13px] stroke-amber-600" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+        </svg>
+      </div>
+      <div>
+        <div class="text-[14px] font-bold">Protected Platforms</div>
+        <div class="text-[12px] text-slate-500">Choose which platforms are monitored</div>
+      </div>
+    </div>
+    <div class="px-5 py-5 flex flex-col gap-5">
+
+      <!-- AI platforms group -->
+      <div>
+        <div class="flex items-center gap-2 mb-2.5">
+          <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">AI</span>
+          <span class="text-[12px] font-semibold text-slate-600">AI Assistants</span>
+        </div>
+        <div id="platformsAI" class="flex flex-col gap-1.5"></div>
+      </div>
+
+      <!-- Social platforms group -->
+      <div>
+        <div class="flex items-center gap-2 mb-2.5">
+          <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 border border-sky-200">SOCIAL</span>
+          <span class="text-[12px] font-semibold text-slate-600">Social Networks</span>
+        </div>
+        <div id="platformsSocial" class="flex flex-col gap-1.5"></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── My Custom Platforms ───────────────────────────────────────────────── -->
+  <section class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+      <div class="flex items-center gap-3">
+        <div class="w-7 h-7 bg-teal-50 rounded-[7px] flex items-center justify-center shrink-0">
+          <svg class="w-[13px] h-[13px] stroke-teal-600" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+          </svg>
+        </div>
+        <div>
+          <div class="text-[14px] font-bold">My Custom Platforms</div>
+          <div class="text-[12px] text-slate-500">Your personal list — synced to your account when logged in</div>
+        </div>
+      </div>
+      <span id="authRequiredBadge"
+        class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 border border-violet-200">
+        Login to sync
+      </span>
+    </div>
+    <div class="px-5 py-5 flex flex-col gap-4">
+
+      <!-- User-added platform list -->
+      <div id="userAddedPlatformsList" class="flex flex-col gap-2"></div>
+
+      <!-- Empty state -->
+      <p id="userAddedEmpty" class="text-[12px] text-slate-400 text-center py-2 hidden">
+        No custom platforms added yet.
+      </p>
+
+      <!-- Add form -->
+      <div class="flex flex-col gap-2.5 pt-1 border-t border-slate-100">
+        <p class="text-[12px] font-semibold text-slate-600">Add a platform</p>
+        <div class="flex gap-2">
+          <input id="newPlatformDomain" type="text" placeholder="example.com"
+            class="flex-1 h-8 px-3 border border-slate-200 rounded-lg text-[12.5px] bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:bg-white transition-all font-mono" />
+          <input id="newPlatformLabel" type="text" placeholder="Label (optional)"
+            class="w-36 h-8 px-3 border border-slate-200 rounded-lg text-[12.5px] bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:bg-white transition-all" />
+        </div>
+        <div class="flex items-center gap-4">
+          <label class="flex items-center gap-1.5 cursor-pointer select-none">
+            <input type="checkbox" id="newPlatformTextAnalysis" checked
+              class="w-3.5 h-3.5 accent-teal-600 cursor-pointer" />
+            <span class="text-[12px] text-slate-600">Text DLP</span>
+          </label>
+          <label class="flex items-center gap-1.5 cursor-pointer select-none">
+            <input type="checkbox" id="newPlatformImageMod" checked
+              class="w-3.5 h-3.5 accent-teal-600 cursor-pointer" />
+            <span class="text-[12px] text-slate-600">Image moderation</span>
+          </label>
+          <button id="addPlatformBtn"
+            class="ml-auto h-8 px-4 bg-teal-600 hover:bg-teal-700 text-white text-[12px] font-semibold rounded-lg transition-colors">
+            + Add
+          </button>
+        </div>
+        <p id="addPlatformError" class="text-[11.5px] text-red-500 hidden"></p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── Save notice ───────────────────────────────────────────────────────── -->
+  <div id="saveNotice"
+    class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[12.5px] font-medium px-4 py-2.5 rounded-xl shadow-lg opacity-0 pointer-events-none transition-opacity duration-300 flex items-center gap-2">
+    <svg class="w-3.5 h-3.5 stroke-emerald-400" viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+    <span id="saveNoticeText">Settings saved</span>
+  </div>
+
+</main>
+
+<script src="src/siteConfigs.js"></script>
+<script src="src/options.js"></script>
+</body>
+</html>

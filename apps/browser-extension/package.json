@@ -1,0 +1,13 @@
+{
+  "name": "confidential-agent-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome MV3 extension — DLP guardrail for generative AI prompts.",
+  "scripts": {
+    "build:css": "tailwindcss -i src/input.css -o tailwind.output.css --minify",
+    "watch:css": "tailwindcss -i src/input.css -o tailwind.output.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
+  }
+}

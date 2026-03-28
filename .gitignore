@@ -1,0 +1,33 @@
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.python-version
+.venv/
+**/.venv/
+
+# Node / frontend
+node_modules/
+.next/
+dist/
+build/
+coverage/
+
+# IDE / OS
+.idea/
+.vscode/
+
+# Localized docs kept out of Git
+README.fr.md
+
+# Environment variables — NEVER commit secrets
+.env
+.env.local
+.env.*.local
+services/security-api/.env

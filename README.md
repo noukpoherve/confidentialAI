@@ -1,2 +1,185 @@
-# confidentialAI
-To protect users from AI platforms (ChatGPT, Claude, Gemini, etc.) by detecting leaks of sensitive data in prompts and, optionally, in the model’s responses.
+# confidential-Agent
+
+Monorepo for building a user-side DLP (Data Loss Prevention) guardrail for
+generative AI platforms (ChatGPT, Claude, Gemini, and others).
+
+The current product scope is:
+- intercept prompts before submission,
+- analyze risk,
+- apply a decision (`ALLOW`, `ANONYMIZE`, `BLOCK`, `WARN`),
+- log incidents,
+- provide an admin dashboard.
+
+## 1) Technical Vision
+
+The project is split into two layers:
+
+1. Local browser layer
+   - Chrome MV3 extension
+   - user input interception
+   - local sensitive-pattern detection
+   - optional local anonymization
+   - backend API call for final arbitration
+
+2. Server security layer
+   - FastAPI prompt analysis API
+   - deterministic rules engine with risk score
+   - agent orchestration via **LangGraph** (`AFE`, `AVS`, `ASI`, `AC`; prompt path includes optional `vector_search` then optional LLM classifier)
+   - optional **Qdrant** semantic cache: similar past `BLOCK`/`WARN` prompts can skip the LLM classifier (see `services/security-api/README.md`)
+   - MongoDB incident storage (in-memory fallback for local dev)
+   - JWT auth + per-user settings (SaaS-ready foundation)
+   - site telemetry from the extension (`/v1/site-signals`)
+   - Next.js admin dashboard
+
+## 2) Repository Structure
+
+```text
+confidential-Agent/
+  apps/
+    browser-extension/      # Chrome MV3 extension
+    admin-dashboard/        # Next.js dashboard
+  services/
+    security-api/           # FastAPI backend
+  packages/
+    shared-types/           # Shared TypeScript contracts
+  infra/
+    docker/                 # Local docker-compose (MongoDB + optional Qdrant)
+    mongodb/                # Mongo init and indexes
+  docs/                     # Detailed documentation
+  scripts/                  # Utility scripts (next phase)
+```
+
+## 3) End-to-End V1 Flow
+
+1. The user types a prompt in an AI input field.
+2. The content script intercepts the prompt before submission.
+3. Local logic checks for sensitive patterns.
+4. The extension calls `POST /v1/analyze` on `security-api`.
+5. The API computes:
+   - risk score,
+   - reasons,
+   - redaction proposals,
+   - final action.
+6. The extension applies the action:
+   - `ALLOW` -> submit as-is,
+   - `ANONYMIZE` -> redact locally, then submit,
+   - `BLOCK` -> stop submission and alert the user,
+   - `WARN` -> ask for explicit user confirmation.
+7. The incident is logged (MongoDB when available, in-memory fallback otherwise).
+8. The dashboard displays incidents and status.
+
+## 4) Quick Start
+
+Recommended order on a fresh machine: **MongoDB (optional) → API → dashboard → extension**.
+
+### Prerequisites
+- Node.js 20+
+- Python 3.11 to 3.13
+- [uv](https://docs.astral.sh/uv/) (recommended for this repo; see **Alternative without uv** below)
+- Docker (optional, recommended for MongoDB and local Qdrant)
+
+### 4.0 Environment (API)
+
+From the repo root, copy the example env file for the API:
+
+```bash
+cp services/security-api/.env.example services/security-api/.env
+# Edit services/security-api/.env as needed (Mongo URL, LLM keys, etc.)
+```
+
+### 4.1 Run MongoDB and optional Qdrant (Docker)
+
+```bash
+cd infra/docker
+docker compose up -d              # MongoDB + Qdrant
+# or only one service:
+# docker compose up mongo -d
+# docker compose up qdrant -d
+```
+
+**Qdrant** is optional. Enable it in `services/security-api/.env` with `VECTOR_SEARCH_ENABLED=true` and `QDRANT_URL` (local: `http://localhost:6333`). For **Qdrant Cloud**, set the cluster HTTPS URL and `QDRANT_API_KEY`. Details: `services/security-api/README.md`.
+
+When Qdrant is running, you can open `http://localhost:6333/dashboard` or `curl http://localhost:6333/collections` to verify connectivity.
+
+### 4.2 Run the API (recommended: uv)
+
+```bash
+cd services/security-api
+uv python pin 3.13
+uv sync --group dev
+uv run uvicorn app.main:app --reload --port 8080
+```
+
+API docs: `http://localhost:8080/docs` · Health: `http://localhost:8080/health`
+
+### 4.2b Run the API (alternative: venv + pip)
+
+If you do not use `uv`:
+
+```bash
+cd services/security-api
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -e .
+pip install pytest          # optional, for running tests
+uvicorn app.main:app --reload --port 8080
+```
+
+### 4.3 Install the extension in dev mode
+
+1. Open `chrome://extensions`.
+2. Enable "Developer mode".
+3. Click "Load unpacked".
+4. Select `apps/browser-extension`.
+5. In extension options, set **API base URL** to `http://localhost:8080` if needed.
+
+### 4.4 Run the dashboard
+
+```bash
+cd apps/admin-dashboard
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`.
+
+- Home: `http://localhost:3000`
+- Incidents: `http://localhost:3000/incidents`
+- Site health (telemetry): `http://localhost:3000/site-health`
+
+## 5) Project progress (what is implemented)
+
+| Area | Status | Notes |
+|------|--------|--------|
+| Chrome extension (MV3) | Done (V1) | Intercept + API call + local redaction; options for API URL |
+| FastAPI `/v1/analyze` | Done | LangGraph pipeline + deterministic policy + incident logging |
+| FastAPI `/v1/validate-response` | Done | Response validation path (AVS-oriented) |
+| Agents `AFE` / `AVS` / `ASI` / `AC` | Done | Wired in `app/agents/` + `orchestrator.py` |
+| Optional LLM classifier | Optional | Env-driven; see `services/security-api/README.md` |
+| Optional Qdrant + embeddings | Optional | Semantic shortcut before LLM (`text-embedding-3-small`); indexes `BLOCK`/`WARN` prompt incidents; fail-open if unavailable |
+| Incidents store | Done | Mongo when available; in-memory fallback |
+| Auth (`/v1/auth/*`) + user settings | Done | JWT; settings for extension targeting |
+| Site signals (`/v1/site-signals/*`) | Done | Extension → API telemetry; dashboard summary |
+| Telegram alerts | Optional | Env-driven for critical incidents |
+| Admin dashboard | In progress | Incidents + site health; auth UI may follow |
+| Tenant RBAC + enterprise policies | Planned | Next phase |
+
+## 6) Current capabilities (summary)
+
+- Shared analysis contracts in `packages/shared-types`
+- End-to-end prompt analysis with **graph trace** returned on analyze responses
+- Engineering standards: `docs/ENGINEERING_STANDARDS.md`
+- Workflow / Notion-oriented guide: `docs/NOTION_WORKFLOW_GUIDE.md`
+- Qdrant / vector search (Notion-ready): `docs/NOTION_QDRANT_VECTOR_SEARCH.md`
+- Implementation guide: `docs/IMPLEMENTATION_GUIDE.md`
+- Architecture: `docs/ARCHITECTURE.md`
+
+## 7) Next steps (roadmap)
+
+1. Dashboard auth (login) aligned with API JWT + role-based access where needed
+2. Tenant-specific policies and admin UI
+3. Harden extension selectors per platform using `site-signals` feedback loop
+4. Deeper IDE / non-browser integrations (proxy or native extensions)
+5. Extended alerting and retention policies for compliance
+
+See also `services/security-api/README.md` for API env vars (LLM, Telegram, Mongo, Qdrant).

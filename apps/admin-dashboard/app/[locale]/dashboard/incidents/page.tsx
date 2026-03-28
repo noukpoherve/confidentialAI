@@ -1,4 +1,4 @@
-import { fetchIncidents } from "../../lib/api";
+import { fetchIncidents } from "../../../../lib/api";
 
 export default async function IncidentsPage() {
   let data: { items: Array<Record<string, unknown>>; total: number } = { items: [], total: 0 };
@@ -15,7 +15,7 @@ export default async function IncidentsPage() {
   return (
     <section className="space-y-4">
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Incidents</h2>
+        <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Incidents</h2>
         <p className="mt-1 text-sm text-slate-500">
           Trace prompt/response security decisions and risk distribution.
         </p>

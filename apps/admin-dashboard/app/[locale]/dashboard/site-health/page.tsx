@@ -1,4 +1,4 @@
-import { fetchSiteSignalSummary } from "../../lib/api";
+import { fetchSiteSignalSummary } from "../../../../lib/api";
 
 export default async function SiteHealthPage() {
   let data: { items: Array<{ hostname: string; count: number; events: Record<string, number>; lastSeenAt: string }>; total: number } =
@@ -16,7 +16,7 @@ export default async function SiteHealthPage() {
   return (
     <section className="space-y-4">
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Site Health</h2>
+        <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Site health</h2>
         <p className="mt-1 text-sm text-slate-500">
           Detect where extension interception fails to prioritize platform fixes.
         </p>
@@ -28,9 +28,9 @@ export default async function SiteHealthPage() {
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Metric label="Impacted Hosts" value={data.total} />
-            <Metric label="Total Signals" value={totalEvents} />
-            <Metric label="Top Host" value={data.items[0]?.hostname || "N/A"} />
+            <Metric label="Impacted hosts" value={data.total} />
+            <Metric label="Total signals" value={totalEvents} />
+            <Metric label="Top host" value={data.items[0]?.hostname || "N/A"} />
           </div>
 
           <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -44,13 +44,13 @@ export default async function SiteHealthPage() {
                       Hostname
                     </th>
                     <th className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Signal Count
+                      Signal count
                     </th>
                     <th className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Event Breakdown
+                      Event breakdown
                     </th>
                     <th className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Last Seen
+                      Last seen
                     </th>
                   </tr>
                 </thead>

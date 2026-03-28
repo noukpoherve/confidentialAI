@@ -1,4 +1,4 @@
-import { fetchIncidents, fetchSiteSignalSummary } from "../lib/api";
+import { fetchIncidents, fetchSiteSignalSummary } from "../../../lib/api";
 
 function countByAction(items: Array<Record<string, unknown>>) {
   const counters: Record<string, number> = { ALLOW: 0, ANONYMIZE: 0, WARN: 0, BLOCK: 0 };
@@ -9,7 +9,7 @@ function countByAction(items: Array<Record<string, unknown>>) {
   return counters;
 }
 
-export default async function HomePage() {
+export default async function DashboardHomePage() {
   let incidentTotal = 0;
   let siteIssueTotal = 0;
   let counters: Record<string, number> = { ALLOW: 0, ANONYMIZE: 0, WARN: 0, BLOCK: 0 };
@@ -25,11 +25,11 @@ export default async function HomePage() {
   }
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Monitoring Overview</h2>
+        <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Monitoring overview</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Real-time posture for prompt/response security and site reliability.
+          Real-time posture for prompt security and site reliability.
         </p>
       </div>
 
@@ -40,32 +40,44 @@ export default async function HomePage() {
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <MetricCard label="Total Incidents" value={incidentTotal} tone="slate" />
+        <MetricCard label="Total incidents" value={incidentTotal} tone="slate" />
         <MetricCard label="Blocked" value={counters.BLOCK} tone="red" />
         <MetricCard label="Warnings" value={counters.WARN} tone="amber" />
         <MetricCard label="Anonymized" value={counters.ANONYMIZE} tone="blue" />
-        <MetricCard label="Sites With Issues" value={siteIssueTotal} tone="purple" />
+        <MetricCard label="Sites with issues" value={siteIssueTotal} tone="purple" />
+      </div>
+
+      <div className="rounded-3xl border border-violet-200/70 bg-[#F5F3FF]/50 p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-bold uppercase tracking-wide text-violet-900">Cost over time</h3>
+          <div className="flex gap-1 rounded-full border border-violet-200 bg-white p-1 text-xs font-semibold">
+            <span className="rounded-full bg-violet-600 px-3 py-1 text-white">7d</span>
+            <span className="rounded-full px-3 py-1 text-slate-600">30d</span>
+          </div>
+        </div>
+        <div className="mt-10 flex flex-col items-center justify-center rounded-2xl border border-dashed border-violet-300/80 bg-white/80 py-16 text-center">
+          <p className="text-sm font-medium text-slate-600">No data yet</p>
+          <p className="mt-1 max-w-sm text-xs text-slate-400">Connect billing and usage pipelines to render this chart.</p>
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">System Status</h3>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">System status</h3>
           <ul className="mt-3 space-y-2 text-sm text-slate-700">
-            <li>Extension interception active across configured platforms/domains</li>
-            <li>LangGraph orchestration active (AFE to LLM classifier to AC, AVS to LLM classifier to AC)</li>
-            <li>Incident persistence active (Mongo with in-memory failover)</li>
-            <li>Site-health telemetry active for failure feedback loop</li>
+            <li>Extension interception across configured platforms</li>
+            <li>LangGraph orchestration (AFE, AVS, ASI, AC)</li>
+            <li>MongoDB incidents with in-memory failover</li>
+            <li>Site-health telemetry for selector feedback</li>
           </ul>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-            Improvement Priorities
-          </h3>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Next steps</h3>
           <ul className="mt-3 space-y-2 text-sm text-slate-700">
-            <li>Review `Site Health` regularly for unsupported DOM patterns</li>
-            <li>Tune classifier thresholds to reduce false positives</li>
-            <li>Expand custom platform profiles from high-failure domains</li>
-            <li>Prepare tenant policies before billing rollout</li>
+            <li>Wire auth middleware (JWT / session)</li>
+            <li>Back API keys with SHA-256 hashes in MongoDB</li>
+            <li>Index embeddings in Qdrant for semantic features</li>
+            <li>Enable Stripe Customer Portal for billing</li>
           </ul>
         </div>
       </div>

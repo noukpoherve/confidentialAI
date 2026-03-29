@@ -79,6 +79,11 @@ export function MarketingFooter({
                   {n.changelog}
                 </Link>
               </li>
+              <li>
+                <Link href={`${prefix}/privacy`} className={linkCls}>
+                  {n.privacy}
+                </Link>
+              </li>
             </ul>
           </div>
 

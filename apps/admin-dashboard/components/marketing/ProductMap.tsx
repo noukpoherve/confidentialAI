@@ -175,25 +175,13 @@ export function ProductMap({
   return (
     <div className="space-y-8">
       <div className="text-center">
-        <h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{p.title}</h2>
-        <p className="mx-auto mt-2 max-w-2xl text-sm text-slate-600">{p.subtitle}</p>
+        <h2 className="text-2xl font-bold tracking-tight text-ink sm:text-3xl">{p.title}</h2>
+        <p className="mx-auto mt-2 max-w-2xl text-sm text-ink-muted">{p.subtitle}</p>
       </div>
 
-      <Layer
-        tone="emerald"
-        title={p.layerPublic}
-        cards={publicCards}
-      />
-      <Layer
-        tone="sky"
-        title={p.layerAuth}
-        cards={authCards}
-      />
-      <Layer
-        tone="violet"
-        title={p.layerDashboard}
-        cards={dashCards}
-      />
+      <Layer tone="emerald" title={p.layerPublic} cards={publicCards} />
+      <Layer tone="sky" title={p.layerAuth} cards={authCards} />
+      <Layer tone="violet" title={p.layerDashboard} cards={dashCards} />
     </div>
   );
 }
@@ -208,20 +196,20 @@ function Layer({
   cards: Card[];
 }) {
   const shell: Record<string, string> = {
-    emerald: "border-emerald-200/70 bg-[#F0FDF4]",
-    sky: "border-sky-200/70 bg-[#EFF6FF]",
-    violet: "border-violet-200/70 bg-[#F5F3FF]",
+    emerald: "border-line bg-surface",
+    sky: "border-accent/25 bg-accent-soft/50",
+    violet: "border-accent/30 bg-accent-soft/70",
   };
 
   return (
     <section className={`rounded-3xl border p-5 sm:p-7 ${shell[tone]}`}>
-      <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">{title}</h3>
+      <h3 className="text-sm font-bold uppercase tracking-wider text-ink-muted">{title}</h3>
       <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {cards.map((c) => {
           const inner = (
             <>
-              <h4 className="text-base font-semibold text-slate-900">{c.title}</h4>
-              <p className="mt-1 text-sm text-slate-600">{c.desc}</p>
+              <h4 className="text-base font-semibold text-ink">{c.title}</h4>
+              <p className="mt-1 text-sm text-ink-muted">{c.desc}</p>
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {c.tags.map((t) => (
                   <Pill key={t.label} tone={t.tone}>
@@ -236,17 +224,14 @@ function Layer({
               <Link
                 key={c.title}
                 href={c.href}
-                className="block rounded-2xl border border-white/60 bg-white/90 p-4 shadow-sm transition hover:border-slate-200 hover:shadow-md"
+                className="block rounded-2xl border border-line bg-canvas p-4 shadow-sm transition hover:border-accent/30 hover:shadow-md"
               >
                 {inner}
               </Link>
             );
           }
           return (
-            <div
-              key={c.title}
-              className="rounded-2xl border border-white/60 bg-white/90 p-4 shadow-sm"
-            >
+            <div key={c.title} className="rounded-2xl border border-line bg-canvas p-4 shadow-sm">
               {inner}
             </div>
           );

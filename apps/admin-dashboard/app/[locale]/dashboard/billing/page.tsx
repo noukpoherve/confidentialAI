@@ -7,7 +7,7 @@ export default async function BillingPage({ params }: { params: Promise<{ locale
   return (
     <section className="space-y-6">
       <div className="flex flex-wrap gap-2">
-        <h2 className="text-2xl font-semibold text-slate-900">{dict.dashboard.navBilling}</h2>
+        <h2 className="text-2xl font-semibold text-ink">{dict.dashboard.navBilling}</h2>
         <Pill tone="amber">Stripe</Pill>
         <Pill tone="sky">portal</Pill>
       </div>

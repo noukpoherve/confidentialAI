@@ -15,8 +15,8 @@ export default async function IncidentsPage() {
   return (
     <section className="space-y-4">
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Incidents</h2>
-        <p className="mt-1 text-sm text-slate-500">
+        <h2 className="text-2xl font-semibold tracking-tight text-ink">Incidents</h2>
+        <p className="mt-1 text-sm text-ink-muted">
           Trace prompt/response security decisions and risk distribution.
         </p>
       </div>
@@ -35,32 +35,32 @@ export default async function IncidentsPage() {
             <MiniMetric label="Allow" value={actionCounts.ALLOW} />
           </div>
 
-          <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="overflow-x-auto rounded-2xl border border-line bg-canvas shadow-sm">
             {data.items.length === 0 ? (
-              <div className="p-6 text-sm text-slate-500">No incidents recorded yet.</div>
+              <div className="p-6 text-sm text-ink-muted">No incidents recorded yet.</div>
             ) : (
               <table className="min-w-full border-collapse">
                 <thead>
-                  <tr className="bg-slate-50">
-                    <th className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <tr className="bg-surface">
+                    <th className="border-b border-line px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       Type
                     </th>
-                    <th className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="border-b border-line px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       Platform
                     </th>
-                    <th className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="border-b border-line px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       Action
                     </th>
-                    <th className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="border-b border-line px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       Risk
                     </th>
-                    <th className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="border-b border-line px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       Reasons
                     </th>
-                    <th className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="border-b border-line px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       Graph
                     </th>
-                    <th className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="border-b border-line px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       Timestamp
                     </th>
                   </tr>
@@ -71,22 +71,22 @@ export default async function IncidentsPage() {
                     const reasons = Array.isArray(item.reasons) ? item.reasons : [];
                     const graph = Array.isArray(item.graphTrace) ? item.graphTrace : [];
                     return (
-                      <tr key={`${item.requestId || idx}-${idx}`} className="hover:bg-slate-50">
-                        <td className="border-b border-slate-100 px-3 py-2 text-xs text-slate-700">
+                      <tr key={`${item.requestId || idx}-${idx}`} className="hover:bg-surface/80">
+                        <td className="border-b border-line/80 px-3 py-2 text-xs text-ink-muted">
                           {String(item.incidentType || "N/A")}
                         </td>
-                        <td className="border-b border-slate-100 px-3 py-2 text-xs text-slate-700">
+                        <td className="border-b border-line/80 px-3 py-2 text-xs text-ink-muted">
                           {String(item.platform || "unknown")}
                         </td>
-                        <td className="border-b border-slate-100 px-3 py-2 text-xs">
+                        <td className="border-b border-line/80 px-3 py-2 text-xs">
                           <span className={`rounded-full px-2 py-1 font-semibold ${actionBadgeClass(action)}`}>
                             {action}
                           </span>
                         </td>
-                        <td className="border-b border-slate-100 px-3 py-2 text-xs text-slate-700">
+                        <td className="border-b border-line/80 px-3 py-2 text-xs text-ink-muted">
                           {String(item.riskScore ?? "-")}
                         </td>
-                        <td className="border-b border-slate-100 px-3 py-2 text-xs text-slate-700">
+                        <td className="border-b border-line/80 px-3 py-2 text-xs text-ink-muted">
                           <div className="max-w-xs space-y-1">
                             {reasons.slice(0, 2).map((reason, rIdx) => (
                               <p key={rIdx} className="line-clamp-2">
@@ -95,21 +95,21 @@ export default async function IncidentsPage() {
                             ))}
                           </div>
                         </td>
-                        <td className="border-b border-slate-100 px-3 py-2 text-xs text-slate-700">
+                        <td className="border-b border-line/80 px-3 py-2 text-xs text-ink-muted">
                           <div className="flex flex-wrap gap-1">
                             {graph.length === 0
                               ? "-"
                               : graph.map((node, nIdx) => (
                                   <span
                                     key={`${node}-${nIdx}`}
-                                    className="rounded-full border border-slate-300 bg-slate-50 px-2 py-0.5 text-[11px]"
+                                    className="rounded-full border border-line bg-surface px-2 py-0.5 text-[11px]"
                                   >
                                     {String(node)}
                                   </span>
                                 ))}
                           </div>
                         </td>
-                        <td className="border-b border-slate-100 px-3 py-2 text-xs text-slate-500">
+                        <td className="border-b border-line/80 px-3 py-2 text-xs text-ink-muted/80">
                           {String(item.createdAt || "-")}
                         </td>
                       </tr>
@@ -138,15 +138,15 @@ function actionBadgeClass(action: string) {
   if (action === "BLOCK") return "bg-red-100 text-red-700";
   if (action === "WARN") return "bg-amber-100 text-amber-700";
   if (action === "ANONYMIZE") return "bg-blue-100 text-blue-700";
-  if (action === "ALLOW") return "bg-emerald-100 text-emerald-700";
-  return "bg-slate-100 text-slate-700";
+  if (action === "ALLOW") return "bg-signal/15 text-emerald-800";
+  return "bg-surface text-ink-muted";
 }
 
 function MiniMetric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-bold leading-none text-slate-900">{value}</p>
+    <div className="rounded-xl border border-line bg-canvas p-3 shadow-sm">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">{label}</p>
+      <p className="mt-1 text-2xl font-bold leading-none text-ink">{value}</p>
     </div>
   );
 }

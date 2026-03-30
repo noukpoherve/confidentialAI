@@ -6,13 +6,23 @@ export default async function DownloadPage({ params }: { params: Promise<{ local
   const d = dict.download;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-      <div className="rounded-3xl border border-emerald-200/70 bg-[#F0FDF4] p-8 sm:p-10">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">{d.title}</h1>
-        <p className="mt-2 max-w-2xl text-sm text-slate-600">{d.subtitle}</p>
-        <div className="mt-8">
-          <ExtensionDownloadGrid dict={dict} />
+    <div>
+      {/* Hero */}
+      <div className="relative overflow-hidden border-b border-line bg-canvas">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_70%_60%_at_50%_0%,rgba(92,92,255,0.08),transparent)]" />
+        <div className="relative mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-accent">{d.title}</p>
+          <h1 className="mt-3 text-4xl font-bold tracking-tight text-ink sm:text-5xl">{d.subtitle}</h1>
+          <div className="mt-3 flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-signal shadow-sm shadow-signal/50" aria-hidden />
+            <p className="text-sm font-medium text-ink-muted">Chrome, Firefox, Edge, Safari</p>
+          </div>
         </div>
+      </div>
+
+      {/* Grid */}
+      <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
+        <ExtensionDownloadGrid dict={dict} />
       </div>
     </div>
   );

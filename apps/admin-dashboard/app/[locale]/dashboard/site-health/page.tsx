@@ -16,8 +16,8 @@ export default async function SiteHealthPage() {
   return (
     <section className="space-y-4">
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Site health</h2>
-        <p className="mt-1 text-sm text-slate-500">
+        <h2 className="text-2xl font-semibold tracking-tight text-ink">Site health</h2>
+        <p className="mt-1 text-sm text-ink-muted">
           Detect where extension interception fails to prioritize platform fixes.
         </p>
       </div>
@@ -33,49 +33,49 @@ export default async function SiteHealthPage() {
             <Metric label="Top host" value={data.items[0]?.hostname || "N/A"} />
           </div>
 
-          <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="overflow-x-auto rounded-2xl border border-line bg-canvas shadow-sm">
             {data.items.length === 0 ? (
-              <div className="p-6 text-sm text-slate-500">No site issues recorded yet.</div>
+              <div className="p-6 text-sm text-ink-muted">No site issues recorded yet.</div>
             ) : (
               <table className="min-w-full border-collapse">
                 <thead>
-                  <tr className="bg-slate-50">
-                    <th className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <tr className="bg-surface">
+                    <th className="border-b border-line px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       Hostname
                     </th>
-                    <th className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="border-b border-line px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       Signal count
                     </th>
-                    <th className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="border-b border-line px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       Event breakdown
                     </th>
-                    <th className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="border-b border-line px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       Last seen
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.items.map((row) => (
-                    <tr key={row.hostname} className="hover:bg-slate-50">
-                      <td className="border-b border-slate-100 px-3 py-2 text-sm font-medium text-slate-800">
+                    <tr key={row.hostname} className="hover:bg-surface/80">
+                      <td className="border-b border-line/80 px-3 py-2 text-sm font-medium text-ink">
                         {row.hostname}
                       </td>
-                      <td className="border-b border-slate-100 px-3 py-2 text-sm text-slate-700">
+                      <td className="border-b border-line/80 px-3 py-2 text-sm text-ink-muted">
                         {row.count}
                       </td>
-                      <td className="border-b border-slate-100 px-3 py-2 text-xs text-slate-700">
+                      <td className="border-b border-line/80 px-3 py-2 text-xs text-ink-muted">
                         <div className="flex flex-wrap gap-1">
                           {Object.entries(row.events).map(([event, count]) => (
                             <span
                               key={`${row.hostname}-${event}`}
-                              className="rounded-full border border-slate-300 bg-slate-50 px-2 py-0.5"
+                              className="rounded-full border border-line bg-surface px-2 py-0.5"
                             >
                               {event}: {count}
                             </span>
                           ))}
                         </div>
                       </td>
-                      <td className="border-b border-slate-100 px-3 py-2 text-xs text-slate-500">
+                      <td className="border-b border-line/80 px-3 py-2 text-xs text-ink-muted/80">
                         {row.lastSeenAt}
                       </td>
                     </tr>
@@ -92,9 +92,9 @@ export default async function SiteHealthPage() {
 
 function Metric({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 truncate text-2xl font-bold leading-none text-slate-900">{value}</p>
+    <div className="rounded-xl border border-line bg-canvas p-3 shadow-sm">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">{label}</p>
+      <p className="mt-1 truncate text-2xl font-bold leading-none text-ink">{value}</p>
     </div>
   );
 }

@@ -21,7 +21,7 @@ export function LanguageSelect({ ariaLabel }: { ariaLabel: string }) {
         const rest = pathname.replace(/^\/(en|fr)/, "") || "";
         router.push(`/${next}${rest}`);
       }}
-      className="cursor-pointer rounded-lg border-2 border-stone-900 bg-white py-2.5 pl-3 pr-10 text-sm font-bold text-stone-900 shadow-[4px_4px_0_0_rgba(0,0,0,0.08)] outline-none transition hover:border-emerald-600 hover:shadow-[4px_4px_0_0_rgba(16,185,129,0.35)] focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/30"
+      className="cursor-pointer rounded-lg border border-line bg-canvas py-2.5 pl-3 pr-10 text-sm font-semibold text-ink shadow-sm outline-none transition hover:border-accent/40 focus:border-accent focus:ring-2 focus:ring-accent/25"
     >
       {locales.map((l) => (
         <option key={l.code} value={l.code}>

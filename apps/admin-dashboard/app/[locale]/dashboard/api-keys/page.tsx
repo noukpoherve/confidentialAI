@@ -5,7 +5,7 @@ export default async function ApiKeysPage({ params }: { params: Promise<{ locale
   const dict = await getDictionary((await params).locale);
 
   return (
-    <div className="rounded-3xl border border-violet-200/60 bg-[#F5F3FF]/30 p-6 shadow-sm sm:p-8">
+    <div className="rounded-3xl border border-accent/20 bg-accent-soft/30 p-6 shadow-sm sm:p-8">
       <ApiKeysClient dict={dict} />
     </div>
   );

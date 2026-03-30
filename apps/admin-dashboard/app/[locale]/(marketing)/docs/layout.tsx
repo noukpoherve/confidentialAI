@@ -27,14 +27,14 @@ export default async function DocsLayout({
             type="search"
             placeholder={d.searchPlaceholder}
             disabled
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500"
+            className="w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-ink-muted"
           />
           <nav className="flex flex-col gap-1 text-sm font-medium">
             {links.map((l) => (
               <Link
                 key={l.href}
                 href={l.href}
-                className="rounded-lg px-3 py-2 text-slate-700 hover:bg-white hover:shadow-sm"
+                className="rounded-lg px-3 py-2 text-ink-muted transition hover:bg-canvas hover:text-ink hover:shadow-sm"
               >
                 {l.label}
               </Link>
@@ -42,7 +42,7 @@ export default async function DocsLayout({
           </nav>
         </div>
       </aside>
-      <div className="min-w-0 flex-1 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+      <div className="min-w-0 flex-1 rounded-3xl border border-line bg-canvas p-8 shadow-sm">
         {children}
       </div>
     </div>

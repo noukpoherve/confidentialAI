@@ -1,6 +1,25 @@
 @import "tailwindcss";
 
+/* Confidential AI — brand tokens (Figma charte) */
 @theme inline {
-  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-serif: var(--font-display), ui-serif, Georgia, "Times New Roman", serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --color-canvas: #fafafa;
+  --color-surface: #f4f4f5;
+  --color-ink: #09090b;
+  --color-ink-muted: #52525b;
+  --color-accent: #5c5cff;
+  --color-accent-soft: #eeeeff;
+  --color-signal: #00e676;
+  --color-line: #e4e4e7;
+}
+
+::selection {
+  background-color: rgba(92, 92, 255, 0.14);
+  color: #09090b;
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }

@@ -13,9 +13,9 @@ export default async function AuthLayout({
   const prefix = `/${locale}`;
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#EFF6FF] text-slate-900">
-      <header className="border-b border-sky-200/80 bg-white/90 px-4 py-4 backdrop-blur sm:px-6">
-        <Link href={prefix} className="text-sm font-semibold text-slate-900">
+    <div className="flex min-h-screen flex-col bg-surface text-ink">
+      <header className="border-b border-line bg-canvas/90 px-4 py-4 backdrop-blur sm:px-6">
+        <Link href={prefix} className="text-sm font-semibold text-ink-muted transition hover:text-ink">
           ← {dict.brand}
         </Link>
       </header>

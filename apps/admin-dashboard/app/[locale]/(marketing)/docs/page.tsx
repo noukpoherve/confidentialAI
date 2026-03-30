@@ -8,12 +8,12 @@ export default async function DocsHomePage({ params }: { params: Promise<{ local
   const prefix = `/${locale}`;
 
   return (
-    <div className="prose prose-slate max-w-none">
-      <h1 className="text-2xl font-bold text-slate-900">{d.title}</h1>
-      <p className="text-slate-600">{d.intro}</p>
-      <p className="text-slate-600">{d.installApi}</p>
+    <div className="prose prose-neutral max-w-none">
+      <h1 className="text-2xl font-bold text-ink">{d.title}</h1>
+      <p className="text-ink-muted">{d.intro}</p>
+      <p className="text-ink-muted">{d.installApi}</p>
       <p className="mt-6">
-        <Link href={prefix} className="font-semibold text-emerald-700 hover:underline">
+        <Link href={prefix} className="font-semibold text-accent hover:underline">
           {d.linkHome}
         </Link>
       </p>

@@ -9,8 +9,8 @@ export default async function PlatformMapPage({ params }: { params: Promise<{ lo
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-      <p className="text-sm text-stone-500">
-        <Link href={prefix} className="font-medium text-emerald-800 hover:underline">
+      <p className="text-sm text-ink-muted">
+        <Link href={prefix} className="font-medium text-accent hover:underline">
           ← {dict.brand}
         </Link>
       </p>

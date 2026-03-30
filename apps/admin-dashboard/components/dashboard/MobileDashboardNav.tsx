@@ -24,15 +24,13 @@ export function MobileDashboardNav({ locale, dict }: { locale: string; dict: Dic
       {items.map(({ suffix, key }) => {
         const href = `/${locale}${suffix}`;
         const active =
-          suffix === "/dashboard"
-            ? pathname === href
-            : pathname.startsWith(href);
+          suffix === "/dashboard" ? pathname === href : pathname.startsWith(href);
         return (
           <Link
             key={suffix}
             href={href}
             className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-              active ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              active ? "bg-ink text-canvas" : "border border-line bg-canvas text-ink-muted hover:bg-surface"
             }`}
           >
             {d[key]}

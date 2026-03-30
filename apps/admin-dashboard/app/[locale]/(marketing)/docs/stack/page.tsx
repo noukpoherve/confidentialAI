@@ -5,25 +5,27 @@ export default async function DocsStackPage({ params }: { params: Promise<{ loca
   const dict = await getDictionary((await params).locale);
   const d = dict.docs;
 
+  const cardCls = "rounded-2xl border border-accent/20 bg-accent-soft/40 p-5";
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-slate-900">{d.stackTitle}</h1>
-      <p className="text-sm text-slate-600">{d.stackIntro}</p>
+      <h1 className="text-2xl font-bold text-ink">{d.stackTitle}</h1>
+      <p className="text-sm text-ink-muted">{d.stackIntro}</p>
       <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl border border-violet-200/80 bg-[#F5F3FF]/60 p-5">
+        <div className={cardCls}>
           <Pill tone="violet">MongoDB</Pill>
-          <h2 className="mt-3 font-semibold text-slate-900">{d.stackMongoTitle}</h2>
-          <p className="mt-2 text-sm text-slate-600">{d.stackMongoBody}</p>
+          <h2 className="mt-3 font-semibold text-ink">{d.stackMongoTitle}</h2>
+          <p className="mt-2 text-sm text-ink-muted">{d.stackMongoBody}</p>
         </div>
-        <div className="rounded-2xl border border-violet-200/80 bg-[#F5F3FF]/60 p-5">
+        <div className={cardCls}>
           <Pill tone="violet">Qdrant</Pill>
-          <h2 className="mt-3 font-semibold text-slate-900">{d.stackQdrantTitle}</h2>
-          <p className="mt-2 text-sm text-slate-600">{d.stackQdrantBody}</p>
+          <h2 className="mt-3 font-semibold text-ink">{d.stackQdrantTitle}</h2>
+          <p className="mt-2 text-sm text-ink-muted">{d.stackQdrantBody}</p>
         </div>
-        <div className="rounded-2xl border border-violet-200/80 bg-[#F5F3FF]/60 p-5">
+        <div className={cardCls}>
           <Pill tone="violet">embeddings</Pill>
-          <h2 className="mt-3 font-semibold text-slate-900">{d.stackEmbedTitle}</h2>
-          <p className="mt-2 text-sm text-slate-600">{d.stackEmbedBody}</p>
+          <h2 className="mt-3 font-semibold text-ink">{d.stackEmbedTitle}</h2>
+          <p className="mt-2 text-sm text-ink-muted">{d.stackEmbedBody}</p>
         </div>
       </div>
     </div>

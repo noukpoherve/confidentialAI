@@ -515,15 +515,20 @@ async function init() {
   $("addPlatformBtn")?.addEventListener("click", addUserPlatform);
   $("newPlatformDomain")?.addEventListener("keydown", (e) => { if (e.key === "Enter") addUserPlatform(); });
 
-  $("useLocalApiBtn")?.addEventListener("click", () => {
+  $("useLocalApiBtn")?.addEventListener("click", async () => {
     const input = $("apiBaseUrl");
     if (input) input.value = API_URL_LOCAL;
     syncApiUrlUi();
+    // Persist immediately so the content script uses localhost without a separate Save click.
+    await chrome.storage.sync.set({ apiBaseUrl: API_URL_LOCAL });
+    showNotice("Backend URL saved: local (http://localhost:8080).");
   });
-  $("useProdApiBtn")?.addEventListener("click", () => {
+  $("useProdApiBtn")?.addEventListener("click", async () => {
     const input = $("apiBaseUrl");
     if (input) input.value = API_URL_PRODUCTION;
     syncApiUrlUi();
+    await chrome.storage.sync.set({ apiBaseUrl: API_URL_PRODUCTION });
+    showNotice("Backend URL saved: production.");
   });
   $("apiBaseUrl")?.addEventListener("input", syncApiUrlUi);
   $("apiBaseUrl")?.addEventListener("change", syncApiUrlUi);

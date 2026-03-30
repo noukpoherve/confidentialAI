@@ -3,7 +3,7 @@
   "name": "Confidential Agent Guardrail",
   "version": "0.1.0",
   "description": "DLP guardrail for generative AI prompts.",
-  "permissions": ["storage", "activeTab", "scripting", "tabs"],
+  "permissions": ["storage", "activeTab", "tabs"],
   "host_permissions": [
     "https://*/*",
     "http://*/*",

@@ -104,10 +104,34 @@
         <div class="text-[12px] text-slate-500">Backend service URL</div>
       </div>
     </div>
-    <div class="px-5 py-5">
-      <label class="text-[12px] font-semibold text-slate-600 mb-1.5 block">Backend URL</label>
-      <input id="apiBaseUrl" type="url" placeholder="http://localhost:8080"
-        class="h-9 px-3 border border-slate-200 rounded-lg text-[13px] bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all w-full font-mono" />
+    <div class="px-5 py-5 flex flex-col gap-3">
+      <div>
+        <p class="text-[12px] font-semibold text-slate-600 mb-2">Quick presets</p>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" id="useLocalApiBtn"
+            class="h-8 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[12px] font-semibold rounded-lg border border-slate-200 transition-colors">
+            Local · localhost:8080
+          </button>
+          <button type="button" id="useProdApiBtn"
+            class="h-8 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[12px] font-semibold rounded-lg border border-indigo-200 transition-colors">
+            Production · Koyeb
+          </button>
+        </div>
+      </div>
+      <p id="apiPresetLabel" class="text-[11px] text-slate-500 leading-snug"></p>
+      <div>
+        <label class="text-[12px] font-semibold text-slate-600 mb-1.5 block" for="apiBaseUrl">Backend URL</label>
+        <input id="apiBaseUrl" type="url" placeholder="http://localhost:8080"
+          class="h-9 px-3 border border-slate-200 rounded-lg text-[13px] bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all w-full font-mono" />
+      </div>
+      <p id="activeApiUrlHint" class="text-[11px] text-slate-400 font-mono break-all"></p>
+      <button type="button" id="testConnectionBtn"
+        class="self-start h-8 px-3.5 bg-white hover:bg-slate-50 text-slate-700 text-[12px] font-semibold rounded-lg border border-slate-200 transition-colors">
+        Test connection
+      </button>
+      <p class="text-[11px] text-slate-400 leading-relaxed">
+        For a custom API host, save settings once and approve the permission prompt so the extension can reach your server.
+      </p>
     </div>
   </section>
 

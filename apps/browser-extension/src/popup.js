@@ -1,5 +1,37 @@
 const DEFAULT_API_BASE_URL = "http://localhost:8080";
 
+function checkApiHealthViaBackgroundOnce() {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage({ type: "HEALTH_CHECK" }, (res) => {
+        const lastErr = chrome.runtime.lastError;
+        if (lastErr) {
+          resolve({ ok: false, status: 0, error: lastErr.message });
+          return;
+        }
+        resolve(res || { ok: false, status: 0, error: "No response from background" });
+      });
+    } catch (e) {
+      resolve({ ok: false, status: 0, error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+}
+
+/** Service worker can be asleep on first open; one short retry fixes “Receiving end does not exist”. */
+async function checkApiHealthViaBackground() {
+  let res = await checkApiHealthViaBackgroundOnce();
+  const err = (res.error || "").toLowerCase();
+  const needsRetry =
+    !res.ok &&
+    res.status === 0 &&
+    (err.includes("receiving end") || err.includes("no response") || err.includes("extension context"));
+  if (needsRetry) {
+    await new Promise((r) => setTimeout(r, 450));
+    res = await checkApiHealthViaBackgroundOnce();
+  }
+  return res;
+}
+
 async function getSettings() {
   const data = await chrome.storage.sync.get(["apiBaseUrl", "guardrailEnabled"]);
   const local = await chrome.storage.local.get(["stats"]);
@@ -90,19 +122,20 @@ function updatePlatformUI(hostname, guardrailEnabled) {
 }
 
 async function checkApiHealth(apiBaseUrl) {
-  try {
-    const res = await fetch(`${apiBaseUrl}/health`, {
-      signal: AbortSignal.timeout(3500),
-    });
-    if (res.ok) {
-      const host = apiBaseUrl.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-      setStatus("ok", "API Connected", host);
-    } else {
-      setStatus("offline", "API Error", `HTTP ${res.status}`);
-    }
-  } catch {
-    setStatus("offline", "API Unreachable", "Check settings or network");
+  const base = (apiBaseUrl || DEFAULT_API_BASE_URL).replace(/\/+$/, "");
+  const res = await checkApiHealthViaBackground();
+  if (res.ok) {
+    const host = base.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    setStatus("ok", "API Connected", host);
+    return;
   }
+  if (res.status) {
+    setStatus("offline", "API Error", `HTTP ${res.status} · ${base}`);
+    return;
+  }
+  const detail = res.error || "Network error";
+  const tried = res.apiBaseUrl || base;
+  setStatus("offline", "API Unreachable", `${detail} · ${tried}`);
 }
 
 async function init() {

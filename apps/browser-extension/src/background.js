@@ -1,8 +1,10 @@
-const DEFAULT_API_BASE_URL = "http://localhost:8080";
+/** Default hosted API (update if your production URL changes). */
+const PRODUCTION_API_BASE_URL = "https://confidentialai.koyeb.app";
+const LOCAL_API_BASE_URL = "http://localhost:8080";
 
 async function getApiBaseUrl() {
   const data = await chrome.storage.sync.get(["apiBaseUrl"]);
-  return data.apiBaseUrl || DEFAULT_API_BASE_URL;
+  return (data.apiBaseUrl || LOCAL_API_BASE_URL).replace(/\/+$/, "");
 }
 
 async function getAuthToken() {
@@ -110,6 +112,35 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     chrome.storage.local.remove("authToken").then(() => {
       sendResponse({ ok: true });
     });
+    return true;
+  }
+
+  if (message?.type === "HEALTH_CHECK") {
+    (async () => {
+      let apiBaseUrl = "";
+      try {
+        apiBaseUrl = await getApiBaseUrl();
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 5000);
+        let response;
+        try {
+          response = await fetch(`${apiBaseUrl}/health`, {
+            method: "GET",
+            signal: ctrl.signal,
+          });
+        } finally {
+          clearTimeout(timer);
+        }
+        sendResponse({ ok: response.ok, status: response.status, apiBaseUrl });
+      } catch (error) {
+        sendResponse({
+          ok: false,
+          status: 0,
+          error: error instanceof Error ? error.message : "Network error",
+          apiBaseUrl: apiBaseUrl || undefined,
+        });
+      }
+    })();
     return true;
   }
 

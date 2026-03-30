@@ -11,6 +11,9 @@
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
+const API_URL_LOCAL = "http://localhost:8080";
+const API_URL_PRODUCTION = "https://confidentialai.koyeb.app";
+
 const SETTINGS_KEYS = [
   "apiBaseUrl",
   "guardrailEnabled",
@@ -33,6 +36,87 @@ async function apiCall({ method = "GET", path, body, useToken = true }) {
       (response) => resolve(response || { ok: false, error: "No response" })
     );
   });
+}
+
+function inferApiPreset(raw) {
+  try {
+    const u = new URL((raw || "").trim() || API_URL_LOCAL);
+    const h = u.hostname.toLowerCase();
+    if ((h === "localhost" || h === "127.0.0.1") && u.port === "8080" && u.protocol === "http:") {
+      return "local";
+    }
+    if (h === "confidentialai.koyeb.app" && u.protocol === "https:") {
+      return "production";
+    }
+    return "custom";
+  } catch {
+    return "custom";
+  }
+}
+
+function isBuiltInApiUrl(apiBaseUrl) {
+  return inferApiPreset(apiBaseUrl) !== "custom";
+}
+
+/**
+ * Custom backends need runtime host permission (declared as optional_host_permissions in the manifest).
+ */
+async function ensureHostPermissionIfNeeded(apiBaseUrl) {
+  if (isBuiltInApiUrl(apiBaseUrl)) return { ok: true };
+  let u;
+  try {
+    u = new URL(apiBaseUrl.trim());
+  } catch {
+    return { ok: false, error: "Invalid backend URL." };
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    return { ok: false, error: "URL must start with http:// or https://." };
+  }
+  const origin = `${u.protocol}//${u.host}`;
+  const perm = { origins: [`${origin}/*`] };
+  try {
+    if (await chrome.permissions.contains(perm)) return { ok: true };
+    const granted = await chrome.permissions.request(perm);
+    return granted
+      ? { ok: true }
+      : { ok: false, error: "Allow host access for this API, or use Local / Production presets." };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Permission error" };
+  }
+}
+
+function updateActiveUrlHint() {
+  const el = $("activeApiUrlHint");
+  const labelEl = $("apiPresetLabel");
+  const input = $("apiBaseUrl");
+  if (!input) return;
+  const url = input.value.trim().replace(/\/+$/, "") || API_URL_LOCAL;
+  if (el) el.textContent = `Active base URL: ${url}`;
+  if (labelEl) {
+    const preset = inferApiPreset(input.value);
+    const lines = {
+      local: "Environment: local development (no extra host permission).",
+      production: "Environment: production API (no extra host permission).",
+      custom: "Environment: custom API — Chrome will ask to allow this host when you save.",
+    };
+    labelEl.textContent = lines[preset];
+  }
+}
+
+function syncApiUrlUi() {
+  updateActiveUrlHint();
+}
+
+async function testApiConnection() {
+  const res = await new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "HEALTH_CHECK" }, (r) => resolve(r || { ok: false, error: "No response" }));
+  });
+  if (res.ok) {
+    showNotice("Connection OK — /health responded successfully.");
+  } else {
+    const msg = res.error || (res.status ? `HTTP ${res.status}` : "Unreachable");
+    showNotice(`Connection failed: ${msg}`, true);
+  }
 }
 
 // ── Toast / notice ────────────────────────────────────────────────────────────
@@ -349,7 +433,8 @@ async function restore() {
   const data = await chrome.storage.sync.get(SETTINGS_KEYS);
 
   const apiUrl = $("apiBaseUrl");
-  if (apiUrl) apiUrl.value = data.apiBaseUrl || "http://localhost:8080";
+  if (apiUrl) apiUrl.value = data.apiBaseUrl || API_URL_LOCAL;
+  syncApiUrlUi();
 
   const guardrailEl = $("guardrailEnabled");
   if (guardrailEl) guardrailEl.checked = data.guardrailEnabled !== false;
@@ -370,10 +455,16 @@ async function restore() {
 // ── Save ──────────────────────────────────────────────────────────────────────
 
 async function save() {
-  const apiUrl = $("apiBaseUrl")?.value.trim() || "http://localhost:8080";
+  const apiUrl = $("apiBaseUrl")?.value.trim().replace(/\/+$/, "") || API_URL_LOCAL;
   const guardrailEnabled = $("guardrailEnabled")?.checked !== false;
   const autoAnonymize = $("autoAnonymize")?.checked === true;
   const imageModerationEnabled = $("imageModerationEnabled")?.checked !== false;
+
+  const perm = await ensureHostPermissionIfNeeded(apiUrl);
+  if (!perm.ok) {
+    showNotice(perm.error || "Could not obtain permission for this API URL.", true);
+    return;
+  }
 
   const payload = {
     apiBaseUrl: apiUrl,
@@ -423,6 +514,20 @@ async function init() {
 
   $("addPlatformBtn")?.addEventListener("click", addUserPlatform);
   $("newPlatformDomain")?.addEventListener("keydown", (e) => { if (e.key === "Enter") addUserPlatform(); });
+
+  $("useLocalApiBtn")?.addEventListener("click", () => {
+    const input = $("apiBaseUrl");
+    if (input) input.value = API_URL_LOCAL;
+    syncApiUrlUi();
+  });
+  $("useProdApiBtn")?.addEventListener("click", () => {
+    const input = $("apiBaseUrl");
+    if (input) input.value = API_URL_PRODUCTION;
+    syncApiUrlUi();
+  });
+  $("apiBaseUrl")?.addEventListener("input", syncApiUrlUi);
+  $("apiBaseUrl")?.addEventListener("change", syncApiUrlUi);
+  $("testConnectionBtn")?.addEventListener("click", () => { testApiConnection().catch(console.warn); });
 }
 
 document.addEventListener("DOMContentLoaded", init);

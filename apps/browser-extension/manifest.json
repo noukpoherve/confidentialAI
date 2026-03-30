@@ -3,12 +3,13 @@
   "name": "Confidential Agent Guardrail",
   "version": "0.1.0",
   "description": "DLP guardrail for generative AI prompts.",
-  "permissions": ["storage", "activeTab", "tabs"],
+  "permissions": ["storage", "activeTab"],
   "host_permissions": [
-    "https://*/*",
-    "http://*/*",
-    "http://localhost:8080/*"
+    "http://localhost:8080/*",
+    "http://127.0.0.1:8080/*",
+    "https://confidentialai.koyeb.app/*"
   ],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
   "background": {
     "service_worker": "src/background.js",
     "type": "module"

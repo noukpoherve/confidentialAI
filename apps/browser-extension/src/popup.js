@@ -33,11 +33,20 @@ async function checkApiHealthViaBackground() {
 }
 
 async function getSettings() {
-  const data = await chrome.storage.sync.get(["apiBaseUrl", "guardrailEnabled"]);
+  const data = await chrome.storage.sync.get([
+    "apiBaseUrl",
+    "guardrailEnabled",
+    "enabledPlatformIds",
+    "customDomains",
+    "userAddedPlatforms",
+  ]);
   const local = await chrome.storage.local.get(["stats"]);
   return {
     apiBaseUrl: data.apiBaseUrl || DEFAULT_API_BASE_URL,
     guardrailEnabled: data.guardrailEnabled !== false,
+    enabledPlatformIds: Array.isArray(data.enabledPlatformIds) ? data.enabledPlatformIds : [],
+    customDomains: Array.isArray(data.customDomains) ? data.customDomains : [],
+    userAddedPlatforms: Array.isArray(data.userAddedPlatforms) ? data.userAddedPlatforms : [],
     stats: local.stats || { analyzed: 0, blocked: 0 },
   };
 }
@@ -93,7 +102,7 @@ function setStatus(state, label, sub) {
   orbIcon.setAttribute("viewBox", "0 0 24 24");
 }
 
-function updatePlatformUI(hostname, guardrailEnabled) {
+function updatePlatformUI(hostname, guardrailEnabled, syncSnapshot) {
   const api = window.ConfidentialAgentSiteConfigs;
   const dotEl   = document.getElementById("platformDot");
   const nameEl  = document.getElementById("platformName");
@@ -107,7 +116,12 @@ function updatePlatformUI(hostname, guardrailEnabled) {
     return;
   }
 
-  const cfg = api.resolveCurrentSiteConfig(hostname, { guardrailEnabled: true });
+  const cfg = api.resolveCurrentSiteConfig(hostname, {
+    guardrailEnabled: true,
+    enabledPlatformIds: syncSnapshot?.enabledPlatformIds,
+    customDomains: syncSnapshot?.customDomains,
+    userAddedPlatforms: syncSnapshot?.userAddedPlatforms,
+  });
   if (cfg) {
     dotEl.className    = "platform-dot";
     nameEl.textContent = cfg.label || cfg.id;
@@ -139,7 +153,7 @@ async function checkApiHealth(apiBaseUrl) {
 }
 
 async function init() {
-  const { apiBaseUrl, guardrailEnabled, stats } = await getSettings();
+  const { apiBaseUrl, guardrailEnabled, stats, ...syncSnapshot } = await getSettings();
 
   // Quick toggle
   const toggle = document.getElementById("quickToggle");
@@ -158,7 +172,7 @@ async function init() {
 
   // Platform detection
   const hostname = await getCurrentTabHostname();
-  updatePlatformUI(hostname, guardrailEnabled);
+  updatePlatformUI(hostname, guardrailEnabled, syncSnapshot);
 
   // API health (fires last — UI is already rendered)
   await checkApiHealth(apiBaseUrl);

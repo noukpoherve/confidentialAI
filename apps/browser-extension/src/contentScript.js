@@ -49,6 +49,8 @@
   let extensionReloadNoticeShown = false;
   let manualWarnBypassHash = null;
   const sentSiteSignals = new Set();
+  /** Last field the user focused — used when submit is a click and activeElement is not the composer. */
+  let lastFocusedPrompt = null;
 
   // ── Blocked-image state ──────────────────────────────────────────────────
   // Set to true when image moderation returns BLOCK so that the Post/Send
@@ -116,65 +118,247 @@
     });
   }
 
-  function getPromptElement() {
-    const cfg = getActiveSiteConfig();
-    const selectors = Array.isArray(cfg?.promptSelectors) ? cfg.promptSelectors : [];
+  function isVisibleElement(el) {
+    if (!(el instanceof HTMLElement)) return false;
+    const style = window.getComputedStyle(el);
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    const r = el.getBoundingClientRect();
+    return r.width >= 4 && r.height >= 4;
+  }
+
+  function isPromptLikeElement(el) {
+    if (!(el instanceof HTMLElement)) return false;
+    if (el instanceof HTMLTextAreaElement) return !el.readOnly;
+    if (el instanceof HTMLInputElement) {
+      const t = (el.type || "text").toLowerCase();
+      if (!["text", "search", "email", "url", ""].includes(t)) return false;
+      return !el.readOnly;
+    }
+    if (el.getAttribute("contenteditable") === "true") return true;
+    if (el.tagName === "RICH-TEXTAREA") return true;
+    if (el.getAttribute("role") === "textbox") return true;
+    return false;
+  }
+
+  const MAX_SHADOW_DEPTH = 12;
+  function queryPromptInShadowTree(selectors, root, depth) {
+    if (depth > MAX_SHADOW_DEPTH || !root) return null;
     for (const selector of selectors) {
-      const found = document.querySelector(selector);
-      if (found instanceof HTMLElement) {
-        return found;
+      let nodes;
+      try {
+        nodes = root.querySelectorAll(selector);
+      } catch (_) {
+        continue;
+      }
+      for (const node of nodes) {
+        if (node instanceof HTMLElement && isVisibleElement(node) && isPromptLikeElement(node)) return node;
+      }
+    }
+    const all = root.querySelectorAll("*");
+    for (const node of all) {
+      if (node.shadowRoot) {
+        const found = queryPromptInShadowTree(selectors, node.shadowRoot, depth + 1);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  function discoverBestPromptElement() {
+    const seen = new Set();
+    const candidates = [];
+
+    function add(el) {
+      if (!(el instanceof HTMLElement) || seen.has(el) || !isVisibleElement(el) || !isPromptLikeElement(el)) return;
+      seen.add(el);
+      candidates.push(el);
+    }
+
+    function walk(root, depth) {
+      if (depth > MAX_SHADOW_DEPTH || !root) return;
+      root.querySelectorAll("textarea").forEach(add);
+      root.querySelectorAll("input").forEach(add);
+      root.querySelectorAll('[contenteditable="true"]').forEach(add);
+      root.querySelectorAll("rich-textarea, [role='textbox']").forEach(add);
+      root.querySelectorAll("*").forEach((n) => {
+        if (n.shadowRoot) walk(n.shadowRoot, depth + 1);
+      });
+    }
+
+    if (document.body) walk(document.body, 0);
+    if (candidates.length === 0) return null;
+
+    function score(el) {
+      const r = el.getBoundingClientRect();
+      const area = Math.max(1, r.width * r.height);
+      const midY = r.top + r.height / 2;
+      const vh = window.innerHeight || 1;
+      const bottomBias = 0.35 + (midY / vh) * 1.25;
+      return area * bottomBias;
+    }
+
+    candidates.sort((a, b) => score(b) - score(a));
+    return candidates[0];
+  }
+
+  function getPromptElement(event) {
+    const cfg = getActiveSiteConfig();
+    if (!cfg) return null;
+
+    if (event && event.type === "keydown") {
+      const ae = document.activeElement;
+      if (ae instanceof HTMLElement && isPromptLikeElement(ae) && isVisibleElement(ae)) {
+        return ae;
       }
     }
 
-    // Generic fallback if site-specific selectors fail.
-    const textarea = document.querySelector("textarea");
-    if (textarea instanceof HTMLElement) return textarea;
-    const editable = document.querySelector('[contenteditable="true"]');
-    if (editable instanceof HTMLElement) return editable;
-    return null;
+    if (
+      lastFocusedPrompt &&
+      lastFocusedPrompt.isConnected &&
+      isVisibleElement(lastFocusedPrompt) &&
+      isPromptLikeElement(lastFocusedPrompt) &&
+      readPromptValue(lastFocusedPrompt).trim().length > 0
+    ) {
+      return lastFocusedPrompt;
+    }
+
+    const selectors = Array.isArray(cfg?.promptSelectors) ? cfg.promptSelectors : [];
+    for (const selector of selectors) {
+      try {
+        const nodes = document.querySelectorAll(selector);
+        for (const node of nodes) {
+          if (node instanceof HTMLElement && isVisibleElement(node) && isPromptLikeElement(node)) return node;
+        }
+      } catch (_) {}
+    }
+    const inShadow = queryPromptInShadowTree(selectors, document.body, 0);
+    if (inShadow) return inShadow;
+
+    const universal = discoverBestPromptElement();
+    if (universal) return universal;
+
+    return queryPromptInShadowTree(
+      ["rich-textarea", "textarea", '[contenteditable="true"]', 'input[type="text"]'],
+      document.body,
+      0
+    );
+  }
+
+  function isActivatableSubmitControl(el) {
+    if (!(el instanceof HTMLElement) || !isVisibleElement(el)) return false;
+    if (el instanceof HTMLButtonElement) return !el.disabled;
+    if (el instanceof HTMLInputElement && el.type === "submit") return !el.disabled;
+    if (el.getAttribute("role") === "button") return true;
+    if (el.tagName === "BUTTON") return !(el instanceof HTMLButtonElement) || !el.disabled;
+    return false;
+  }
+
+  function discoverSendButtonDeep(cfg) {
+    const patterns = Array.isArray(cfg.sendButtonPatterns) ? cfg.sendButtonPatterns : [];
+    const candidates = [];
+
+    function consider(el) {
+      if (!isActivatableSubmitControl(el)) return;
+      const label = (
+        el.getAttribute("aria-label") ||
+        el.getAttribute("title") ||
+        (el instanceof HTMLInputElement ? el.value : "") ||
+        (el.innerText || el.textContent || "")
+      ).trim();
+      if (label && patterns.some((p) => p.test(label))) candidates.push(el);
+    }
+
+    function walk(root, depth) {
+      if (depth > MAX_SHADOW_DEPTH || !root) return;
+      root.querySelectorAll("button, [role='button'], input[type='submit']").forEach(consider);
+      root.querySelectorAll("*").forEach((n) => {
+        if (n.shadowRoot) walk(n.shadowRoot, depth + 1);
+      });
+    }
+
+    walk(document.body, 0);
+    return candidates[0] || null;
   }
 
   function getSendButton() {
     const cfg = getActiveSiteConfig();
-    const selectors = Array.isArray(cfg?.sendButtonSelectors) ? cfg.sendButtonSelectors : [];
+    if (!cfg) return null;
+    const selectors = Array.isArray(cfg.sendButtonSelectors) ? cfg.sendButtonSelectors : [];
     for (const selector of selectors) {
-      const button = document.querySelector(selector);
-      if (button instanceof HTMLButtonElement && !button.disabled) {
-        return button;
-      }
+      try {
+        const nodes = document.querySelectorAll(selector);
+        for (const node of nodes) {
+          if (node instanceof HTMLButtonElement && !node.disabled && isVisibleElement(node)) return node;
+        }
+      } catch (_) {}
     }
-    return null;
+    return discoverSendButtonDeep(cfg);
   }
 
-  function matchesSendButton(target) {
-    if (!(target instanceof Element)) return false;
-    if (target.closest("[data-confidential-agent-modal='true']")) return false;
+  function matchesSendButton(event) {
+    if (!event || !(event.target instanceof Element)) return false;
+    if (event.target.closest("[data-confidential-agent-modal='true']")) return false;
     const cfg = getActiveSiteConfig();
     if (!cfg) return false;
 
+    const path = typeof event.composedPath === "function" ? event.composedPath() : [event.target];
     const selectors = Array.isArray(cfg.sendButtonSelectors) ? cfg.sendButtonSelectors : [];
-    for (const selector of selectors) {
-      const matched = target.closest(selector);
-      // Accept <button> elements and elements acting as buttons via role/aria.
-      if (
-        matched instanceof HTMLButtonElement ||
-        (matched instanceof HTMLElement &&
-          (matched.getAttribute("role") === "button" ||
-           matched.tagName === "DIV" && matched.getAttribute("aria-label")))
-      ) {
-        return true;
+
+    for (const node of path) {
+      if (!(node instanceof Element)) continue;
+
+      for (const selector of selectors) {
+        let matched = null;
+        try {
+          if (node.matches(selector)) matched = node;
+          else matched = node.closest(selector);
+        } catch (_) {
+          continue;
+        }
+        if (
+          matched &&
+          (matched instanceof HTMLButtonElement ||
+            (matched instanceof HTMLElement &&
+              (matched.getAttribute("role") === "button" ||
+                (matched.tagName === "DIV" && matched.getAttribute("aria-label")))))
+        ) {
+          if (matched instanceof HTMLButtonElement && matched.disabled) continue;
+          return true;
+        }
+      }
+
+      if (node instanceof HTMLElement) {
+        const text = (node.innerText || node.textContent || "").trim().slice(0, 120);
+        if (
+          text &&
+          cfg.sendButtonPatterns.some((pattern) => pattern.test(text)) &&
+          (node instanceof HTMLButtonElement ||
+            node.getAttribute("role") === "button" ||
+            node.tagName === "BUTTON")
+        ) {
+          if (node instanceof HTMLButtonElement && node.disabled) continue;
+          return true;
+        }
       }
     }
-
-    const text = (target.textContent || "").trim();
-    if (!text) return false;
-    return cfg.sendButtonPatterns.some((pattern) => pattern.test(text));
+    return false;
   }
 
   function readPromptValue(el) {
     if (!el) return "";
     if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
       return el.value || "";
+    }
+    try {
+      const v = el.value;
+      if (typeof v === "string" && v.length) return v;
+    } catch (_) {}
+    const sr = el.shadowRoot;
+    if (sr) {
+      const ta = sr.querySelector("textarea");
+      if (ta instanceof HTMLTextAreaElement) return ta.value || "";
+      const ce = sr.querySelector('[contenteditable="true"]');
+      if (ce instanceof HTMLElement) return ce.textContent || "";
     }
     return el.textContent || "";
   }
@@ -184,7 +368,24 @@
     if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
       el.value = value;
       el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
       return;
+    }
+    const sr = el.shadowRoot;
+    if (sr) {
+      const ta = sr.querySelector("textarea");
+      if (ta instanceof HTMLTextAreaElement) {
+        ta.value = value;
+        ta.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        return;
+      }
+      const ce = sr.querySelector('[contenteditable="true"]');
+      if (ce instanceof HTMLElement) {
+        ce.textContent = value;
+        ce.dispatchEvent(new Event("input", { bubbles: true }));
+        return;
+      }
     }
     el.textContent = value;
     el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -1621,7 +1822,7 @@
   }
 
   function replaySubmission() {
-    const promptElement = getPromptElement();
+    const promptElement = getPromptElement(null);
     const promptForm = promptElement instanceof HTMLElement ? promptElement.closest("form") : null;
     if (promptForm && typeof promptForm.requestSubmit === "function") {
       replayingSubmission = true;
@@ -1671,7 +1872,7 @@
     event.preventDefault();
     event.stopPropagation();
 
-    const el = getPromptElement();
+    const el = getPromptElement(event);
     const prompt = readPromptValue(el).trim();
     if (!prompt) {
       await reportSiteSignal("PROMPT_ELEMENT_NOT_FOUND", "Submit intercepted but no prompt element detected.");
@@ -2057,6 +2258,17 @@
   }
 
   document.addEventListener(
+    "focusin",
+    (event) => {
+      const t = event.target;
+      if (t instanceof HTMLElement && isPromptLikeElement(t) && isVisibleElement(t)) {
+        lastFocusedPrompt = t;
+      }
+    },
+    true
+  );
+
+  document.addEventListener(
     "keydown",
     (event) => {
       // Intercept Enter (without Shift), usually used to submit.
@@ -2070,7 +2282,7 @@
   document.addEventListener(
     "click",
     (event) => {
-      if (matchesSendButton(event.target)) {
+      if (matchesSendButton(event)) {
         analyzeAndMaybeBlock(event);
       }
     },
@@ -2089,7 +2301,8 @@
     if (
       !changes.guardrailEnabled &&
       !changes.enabledPlatformIds &&
-      !changes.customDomains
+      !changes.customDomains &&
+      !changes.userAddedPlatforms
     ) {
       return;
     }

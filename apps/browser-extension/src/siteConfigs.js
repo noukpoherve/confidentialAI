@@ -1,6 +1,10 @@
 /**
  * Platform seed and host-resolution utilities.
- * This lets users enable/disable platforms and add custom domains in extension options.
+ *
+ * Built-in seeds: zero-config for known products (selectors as hints).
+ * User-added / custom domains: only the hostname is required — the content script
+ * discovers composers via universal heuristics (focus, visibility, shadow DOM, scoring)
+ * so new sites do not need code changes when users add them in options.
  */
 
 const GENERIC_SEND_BUTTON_PATTERNS = [
@@ -24,7 +28,15 @@ const GENERIC_SEND_BUTTON_SELECTORS = [
   'button[aria-label*="Envoyer" i]',
   'button[aria-label*="Publier" i]',
 ];
-const GENERIC_PROMPT_SELECTORS = ['textarea', 'div[contenteditable="true"]', 'input[type="text"]'];
+// Google AI UIs (Stitch, Gemini-style) often use <rich-textarea>; try before generic textarea
+// so we do not lock onto a hidden <textarea> elsewhere on the page.
+const GENERIC_PROMPT_SELECTORS = [
+  "rich-textarea",
+  'div[contenteditable="true"][role="textbox"]',
+  "textarea",
+  'div[contenteditable="true"]',
+  'input[type="text"]',
+];
 const GENERIC_RESPONSE_SELECTORS = ['main article', '[role="article"]', '.markdown', '.prose'];
 
 // ── Feature flags ────────────────────────────────────────────────────────────
@@ -147,6 +159,39 @@ const PLATFORM_SEED = [
   },
   { id: "copilot",     label: "Microsoft Copilot", type: "ai", features: ["textAnalysis", "imageModeration"], domains: ["copilot.microsoft.com"] },
   { id: "perplexity",  label: "Perplexity",         type: "ai", features: ["textAnalysis", "imageModeration"], domains: ["perplexity.ai"] },
+  {
+    id: "google-stitch",
+    label: "Google Stitch",
+    type: "ai",
+    features: ["textAnalysis", "imageModeration"],
+    domains: ["stitch.withgoogle.com"],
+    sendButtonPatterns: [/send/i, /submit/i, /run/i, /ask/i],
+    sendButtonSelectors: [
+      'button[aria-label*="Send" i]',
+      'button[aria-label*="Run" i]',
+      'button[aria-label*="Submit" i]',
+      'button[aria-label*="Ask" i]',
+      ...GENERIC_SEND_BUTTON_SELECTORS,
+    ],
+    promptSelectors: [
+      "rich-textarea",
+      'textarea[placeholder*="Ask" i]',
+      'textarea[placeholder*="Message" i]',
+      'textarea[placeholder*="Describe" i]',
+      'textarea[placeholder*="What" i]',
+      'textarea[placeholder*="Tell" i]',
+      'div[contenteditable="true"][role="textbox"]',
+      'div[contenteditable="true"]',
+      "textarea",
+      ...GENERIC_PROMPT_SELECTORS.filter((s) => s !== "textarea" && s !== 'div[contenteditable="true"]'),
+    ],
+    responseSelectors: [
+      "main [role=\"article\"]",
+      "main article",
+      '[role="article"]',
+      ...GENERIC_RESPONSE_SELECTORS,
+    ],
+  },
   { id: "mistral",     label: "Mistral Le Chat",    type: "ai", features: ["textAnalysis", "imageModeration"], domains: ["chat.mistral.ai"] },
   { id: "meta-ai",     label: "Meta AI",            type: "ai", features: ["textAnalysis", "imageModeration"], domains: ["meta.ai"] },
   { id: "poe",         label: "Poe",                type: "ai", features: ["textAnalysis", "imageModeration"], domains: ["poe.com"] },

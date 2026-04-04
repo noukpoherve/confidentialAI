@@ -7,6 +7,7 @@
   "nav": {
     "product": "Product",
     "download": "Download",
+    "extensions": "Extensions",
     "docs": "Docs",
     "pricing": "Pricing",
     "blog": "Blog",
@@ -216,7 +217,7 @@
     "dataQdrant": "Qdrant — embedding vectors for semantic workflows",
     "dataEmbed": "OpenAI text-embedding-3-small — same API key as your stack",
     "installTitle": "Install the extension",
-    "installSubtitle": "Choose your browser. Use the developer build until store listings are live.",
+    "installSubtitle": "Chrome and Edge: install from the Chrome Web Store. Other browsers: see below or use the developer build.",
     "chrome": "Chrome",
     "edge": "Edge",
     "firefox": "Firefox",

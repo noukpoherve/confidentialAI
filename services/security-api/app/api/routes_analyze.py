@@ -1,8 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.agents.asi import notify_critical_incident
 from app.agents.image_moderator import run_image_moderator
 from app.agents.orchestrator import analyze_prompt_with_agents, validate_response_with_agents
+from app.core.auth import get_current_user_optional
 from app.core.config import settings
 from app.core.incident_store import get_incident_store
 from app.schemas.analyze import (
@@ -72,8 +73,14 @@ def _build_incident_payload(
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
-def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
-    execution = analyze_prompt_with_agents(prompt=request.prompt, user_consent=request.userConsent)
+def analyze(
+    request: AnalyzeRequest,
+    current_user: dict | None = Depends(get_current_user_optional),
+) -> AnalyzeResponse:
+    user_id = current_user.get("id") if current_user else None
+    execution = analyze_prompt_with_agents(
+        prompt=request.prompt, user_consent=request.userConsent, user_id=user_id
+    )
     decision = execution.decision
     response = AnalyzeResponse(
         requestId=request.requestId,

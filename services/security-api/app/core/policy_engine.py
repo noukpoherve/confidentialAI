@@ -41,6 +41,8 @@ RISK_WEIGHTS: dict[str, int] = {
     # Link to a known adult or violent website embedded in the prompt text.
     # 55 puts a single hit in WARN territory; multiple hits will BLOCK.
     "HARMFUL_URL": 55,
+    # User-configured confidential URL (exact path) from protected_urls.
+    "URL_CONFIDENTIELLE": 25,
 }
 
 # When the AI model *reproduces* sensitive data in its output, the risk is higher

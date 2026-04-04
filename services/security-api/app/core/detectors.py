@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 
 @dataclass
@@ -7,6 +8,8 @@ class DetectorHit:
     hit_type: str
     raw_value: str
     confidence: float
+    span_start: int | None = None
+    span_end: int | None = None
 
 
 DETECTOR_PATTERNS: dict[str, re.Pattern[str]] = {
@@ -146,6 +149,49 @@ def _is_plausible_swift_bic(token_upper: str) -> bool:
     return True
 
 
+# 8-letter words that accidentally match the SWIFT shape (4+2+2), e.g. CERT+AI+NS.
+# Plain prose has no CODE_CONTEXT_SIGNALS nearby — still suppress these tokens.
+_SWIFT_8_FALSE_POSITIVE_WORDS = frozenset(
+    {
+        "CERTAINS",
+        "CERTAINE",
+    }
+)
+
+CODE_CONTEXT_SIGNALS = [
+    r"os\.getenv",
+    r"import\s+",
+    r"def\s+\w+",
+    r"class\s+\w+",
+    r"=\s*[\"']",
+    r"http[s]?://",
+    r"\w+\.\w+\(",
+    r"```",
+    r"#\s+",
+    r"pip\s+install",
+    r"npm\s+",
+    r"<[a-zA-Z]+>",
+]
+
+_CODE_CONTEXT_COMPILED = [
+    re.compile(p, re.IGNORECASE | re.MULTILINE) for p in CODE_CONTEXT_SIGNALS
+]
+
+
+def is_code_context(text: str, match_start: int, match_end: int, window: int = 150) -> bool:
+    """
+    True if the match sits in a code / technical context (fuzzy window).
+    Fail-open: on any error, returns False so we do not drop a potential true positive.
+    """
+    try:
+        lo = max(0, match_start - window)
+        hi = min(len(text), match_end + window)
+        chunk = text[lo:hi]
+        return any(p.search(chunk) for p in _CODE_CONTEXT_COMPILED)
+    except Exception:
+        return False
+
+
 REDACTED_PLACEHOLDER_PATTERN = re.compile(r"\[REDACTED_[A-Z_]+\]")
 
 
@@ -158,22 +204,26 @@ def _preview(text: str, max_len: int = 24) -> str:
 
 def detect_sensitive_content(prompt: str) -> list[DetectorHit]:
     """
-    Deterministic regex-based detection.
-    This layer is intentionally simple and explainable for V1.
+    Deterministic regex-based detection, optionally reinforced with spaCy phrase
+    matching for LEGAL_HR variants (see app.core.spacy_detectors).
     """
+    from app.core.spacy_detectors import collect_spacy_legal_hr_spans
+
     hits: list[DetectorHit] = []
 
     for hit_type, pattern in DETECTOR_PATTERNS.items():
         for match in pattern.finditer(prompt):
             raw_value = match.group(0)
-            # Already-redacted placeholders should not be re-flagged as sensitive.
             if REDACTED_PLACEHOLDER_PATTERN.search(raw_value):
                 continue
+            s, e = match.span()
             hits.append(
                 DetectorHit(
                     hit_type=hit_type,
                     raw_value=raw_value,
                     confidence=0.8 if hit_type != "SOURCE_CODE" else 0.65,
+                    span_start=s,
+                    span_end=e,
                 )
             )
 
@@ -181,15 +231,42 @@ def detect_sensitive_content(prompt: str) -> list[DetectorHit]:
         raw_value = match.group(0)
         if REDACTED_PLACEHOLDER_PATTERN.search(raw_value):
             continue
-        if not _is_plausible_swift_bic(raw_value.upper()):
+        token_upper = raw_value.upper()
+        if not _is_plausible_swift_bic(token_upper):
+            continue
+        s, e = match.span()
+        if len(token_upper) == 8 and token_upper in _SWIFT_8_FALSE_POSITIVE_WORDS:
+            continue
+        if is_code_context(prompt, s, e):
             continue
         hits.append(
             DetectorHit(
                 hit_type="SWIFT_BIC",
                 raw_value=raw_value,
                 confidence=0.85,
+                span_start=s,
+                span_end=e,
             )
         )
+
+    legal_spans = [
+        (h.span_start, h.span_end)
+        for h in hits
+        if h.hit_type == "LEGAL_HR" and h.span_start is not None and h.span_end is not None
+    ]
+    for raw_value, s, e in collect_spacy_legal_hr_spans(prompt, legal_spans):
+        if REDACTED_PLACEHOLDER_PATTERN.search(raw_value):
+            continue
+        hits.append(
+            DetectorHit(
+                hit_type="LEGAL_HR",
+                raw_value=raw_value,
+                confidence=0.75,
+                span_start=s,
+                span_end=e,
+            )
+        )
+        legal_spans.append((s, e))
 
     return hits
 
@@ -206,3 +283,38 @@ def build_redactions(hits: list[DetectorHit]) -> list[dict[str, str]]:
             }
         )
     return replacements
+
+
+def build_url_protection_patterns(protected_urls: list[str]) -> list[tuple[str, re.Pattern[str]]]:
+    """
+    Build (label, compiled_regex) pairs from user-configured URLs.
+
+    - Host-only (path empty or "/"): match http(s)://<host>... non-whitespace tail.
+    - With path: exact literal match of the normalized URL string.
+    """
+    result: list[tuple[str, re.Pattern[str]]] = []
+    for raw in protected_urls:
+        s = (raw or "").strip()
+        if not s:
+            continue
+        normalized = s if "://" in s else f"https://{s}"
+        try:
+            parsed = urlparse(normalized)
+        except Exception:
+            continue
+        netloc = (parsed.netloc or "").strip().lower()
+        if not netloc:
+            continue
+        path = parsed.path or ""
+        if path in ("", "/"):
+            host_label = netloc.split(":")[0].replace(".", "_").upper()
+            label = f"URL_{host_label}"
+            pattern = re.compile(
+                r"https?://" + re.escape(netloc) + r"[^\s]*",
+                re.IGNORECASE,
+            )
+        else:
+            label = "URL_CONFIDENTIELLE"
+            pattern = re.compile(re.escape(normalized), re.IGNORECASE)
+        result.append((label, pattern))
+    return result

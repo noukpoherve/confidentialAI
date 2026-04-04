@@ -1,6 +1,10 @@
 /**
  * Platform seed and host-resolution utilities.
- * This lets users enable/disable platforms and add custom domains in extension options.
+ *
+ * Built-in seeds: zero-config for known products (selectors as hints).
+ * User-added sites: hostname only (e.g. github.com) protects the whole host; a full URL
+ * with a path (e.g. https://github.com/org/repo/pull/1) protects only that path prefix.
+ * The content script discovers composers via universal heuristics when the page matches.
  */
 
 const GENERIC_SEND_BUTTON_PATTERNS = [
@@ -9,6 +13,9 @@ const GENERIC_SEND_BUTTON_PATTERNS = [
   /ask/i,
   /run/i,
   /post/i,
+  /comment/i,
+  /reply/i,
+  /review/i,
   /envoyer/i,
   /publier/i,
   /message/i,
@@ -21,10 +28,21 @@ const GENERIC_SEND_BUTTON_SELECTORS = [
   'button[aria-label*="Ask" i]',
   'button[aria-label*="Run" i]',
   'button[aria-label*="Post" i]',
+  'button[aria-label*="Comment" i]',
+  'button[aria-label*="Reply" i]',
+  'button[aria-label*="Review" i]',
   'button[aria-label*="Envoyer" i]',
   'button[aria-label*="Publier" i]',
 ];
-const GENERIC_PROMPT_SELECTORS = ['textarea', 'div[contenteditable="true"]', 'input[type="text"]'];
+// Google AI UIs (Stitch, Gemini-style) often use <rich-textarea>; try before generic textarea
+// so we do not lock onto a hidden <textarea> elsewhere on the page.
+const GENERIC_PROMPT_SELECTORS = [
+  "rich-textarea",
+  'div[contenteditable="true"][role="textbox"]',
+  "textarea",
+  'div[contenteditable="true"]',
+  'input[type="text"]',
+];
 const GENERIC_RESPONSE_SELECTORS = ['main article', '[role="article"]', '.markdown', '.prose'];
 
 // ── Feature flags ────────────────────────────────────────────────────────────
@@ -65,7 +83,18 @@ const SOCIAL_SEND_BUTTON_SELECTORS = [
 
 const SOCIAL_SEND_BUTTON_PATTERNS = [
   /post/i, /tweet/i, /share/i, /send/i, /publish/i,
+  /comment/i, /reply/i, /review/i,
   /publier/i, /partager/i, /envoyer/i,
+];
+
+/** GitHub / GitLab — PR & issue comment boxes use “Comment” / “Reply”, not “Send”. */
+const CODE_HOST_PROMPT_SELECTORS = [
+  "textarea.js-comment-field",
+  "textarea.js-tracked-tooltipped-comment",
+  'textarea[name="comment[body]"]',
+  "textarea[id^=merge_request]",
+  "textarea#note_note",
+  ...GENERIC_PROMPT_SELECTORS,
 ];
 
 const PLATFORM_SEED = [
@@ -147,6 +176,39 @@ const PLATFORM_SEED = [
   },
   { id: "copilot",     label: "Microsoft Copilot", type: "ai", features: ["textAnalysis", "imageModeration"], domains: ["copilot.microsoft.com"] },
   { id: "perplexity",  label: "Perplexity",         type: "ai", features: ["textAnalysis", "imageModeration"], domains: ["perplexity.ai"] },
+  {
+    id: "google-stitch",
+    label: "Google Stitch",
+    type: "ai",
+    features: ["textAnalysis", "imageModeration"],
+    domains: ["stitch.withgoogle.com"],
+    sendButtonPatterns: [/send/i, /submit/i, /run/i, /ask/i],
+    sendButtonSelectors: [
+      'button[aria-label*="Send" i]',
+      'button[aria-label*="Run" i]',
+      'button[aria-label*="Submit" i]',
+      'button[aria-label*="Ask" i]',
+      ...GENERIC_SEND_BUTTON_SELECTORS,
+    ],
+    promptSelectors: [
+      "rich-textarea",
+      'textarea[placeholder*="Ask" i]',
+      'textarea[placeholder*="Message" i]',
+      'textarea[placeholder*="Describe" i]',
+      'textarea[placeholder*="What" i]',
+      'textarea[placeholder*="Tell" i]',
+      'div[contenteditable="true"][role="textbox"]',
+      'div[contenteditable="true"]',
+      "textarea",
+      ...GENERIC_PROMPT_SELECTORS.filter((s) => s !== "textarea" && s !== 'div[contenteditable="true"]'),
+    ],
+    responseSelectors: [
+      "main [role=\"article\"]",
+      "main article",
+      '[role="article"]',
+      ...GENERIC_RESPONSE_SELECTORS,
+    ],
+  },
   { id: "mistral",     label: "Mistral Le Chat",    type: "ai", features: ["textAnalysis", "imageModeration"], domains: ["chat.mistral.ai"] },
   { id: "meta-ai",     label: "Meta AI",            type: "ai", features: ["textAnalysis", "imageModeration"], domains: ["meta.ai"] },
   { id: "poe",         label: "Poe",                type: "ai", features: ["textAnalysis", "imageModeration"], domains: ["poe.com"] },
@@ -267,6 +329,39 @@ const PLATFORM_SEED = [
     sendButtonPatterns: SOCIAL_SEND_BUTTON_PATTERNS,
     responseSelectors: [],
   },
+  {
+    id: "github",
+    label: "GitHub",
+    type: "social",
+    features: ["textAnalysis", "imageModeration"],
+    domains: ["github.com"],
+    promptSelectors: CODE_HOST_PROMPT_SELECTORS,
+    sendButtonSelectors: [...GENERIC_SEND_BUTTON_SELECTORS, ...SOCIAL_SEND_BUTTON_SELECTORS],
+    sendButtonPatterns: [...GENERIC_SEND_BUTTON_PATTERNS, ...SOCIAL_SEND_BUTTON_PATTERNS],
+    responseSelectors: GENERIC_RESPONSE_SELECTORS,
+  },
+  {
+    id: "gitlab",
+    label: "GitLab",
+    type: "social",
+    features: ["textAnalysis", "imageModeration"],
+    domains: ["gitlab.com", "gitlab.org"],
+    promptSelectors: CODE_HOST_PROMPT_SELECTORS,
+    sendButtonSelectors: [...GENERIC_SEND_BUTTON_SELECTORS, ...SOCIAL_SEND_BUTTON_SELECTORS],
+    sendButtonPatterns: [...GENERIC_SEND_BUTTON_PATTERNS, ...SOCIAL_SEND_BUTTON_PATTERNS],
+    responseSelectors: GENERIC_RESPONSE_SELECTORS,
+  },
+  {
+    id: "bitbucket",
+    label: "Bitbucket",
+    type: "social",
+    features: ["textAnalysis", "imageModeration"],
+    domains: ["bitbucket.org"],
+    promptSelectors: CODE_HOST_PROMPT_SELECTORS,
+    sendButtonSelectors: [...GENERIC_SEND_BUTTON_SELECTORS, ...SOCIAL_SEND_BUTTON_SELECTORS],
+    sendButtonPatterns: [...GENERIC_SEND_BUTTON_PATTERNS, ...SOCIAL_SEND_BUTTON_PATTERNS],
+    responseSelectors: GENERIC_RESPONSE_SELECTORS,
+  },
 ];
 
 function normalizeDomain(value) {
@@ -276,6 +371,57 @@ function normalizeDomain(value) {
     .replace(/^https?:\/\//, "")
     .replace(/\/.*$/, "")
     .replace(/^www\./, "");
+}
+
+/** Path for matching: no trailing slash except "/". */
+function normalizePathname(path) {
+  let p = String(path || "/");
+  if (p !== "/" && p.endsWith("/")) p = p.slice(0, -1);
+  return p || "/";
+}
+
+/**
+ * Parse options input: domain-only → whole host; URL with path → path-prefix scope.
+ * @returns {{ ok: true, host: string, pathPrefix: string | null, display: string } | { ok: false, error: string }}
+ */
+function parseUserSiteInput(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return { ok: false, error: "empty" };
+  let url;
+  try {
+    url = /^https?:\/\//i.test(s) ? new URL(s) : new URL(`https://${s}`);
+  } catch {
+    return { ok: false, error: "invalid" };
+  }
+  if (!url.hostname) return { ok: false, error: "invalid" };
+  const host = url.hostname.replace(/^www\./i, "").toLowerCase();
+  let path = url.pathname || "/";
+  if (path !== "/" && path.endsWith("/")) path = path.slice(0, -1);
+  const pathPrefix = path === "/" ? null : normalizePathname(path);
+  const display = pathPrefix ? `${host}${pathPrefix}` : host;
+  return { ok: true, host, pathPrefix, display };
+}
+
+function pathPrefixMatchesPage(pathname, prefix) {
+  const p = normalizePathname(pathname);
+  const pref = normalizePathname(prefix);
+  if (pref === "/") return true;
+  return p === pref || p.startsWith(`${pref}/`);
+}
+
+/**
+ * @param {{ domain: string, pathPrefix?: string | null }} entry
+ * @param {string} normalizedHost hostname already normalized
+ * @param {string} pathname location.pathname
+ */
+function userAddedEntryMatchesPage(entry, normalizedHost, pathname) {
+  const ruleHost = normalizeDomain(entry.domain);
+  if (!ruleHost || !hostMatchesDomain(normalizedHost, ruleHost)) return false;
+  const prefix = entry.pathPrefix;
+  if (prefix == null || prefix === "") {
+    return true;
+  }
+  return pathPrefixMatchesPage(pathname, prefix);
 }
 
 function hostMatchesDomain(hostname, domain) {
@@ -321,9 +467,11 @@ function buildCustomConfig(domain) {
  */
 function buildUserAddedConfig(entry) {
   const normalized = normalizeDomain(entry.domain);
+  const pathSuffix = entry.pathPrefix ? String(entry.pathPrefix) : "";
+  const labelBase = pathSuffix ? `${normalized}${pathSuffix}` : normalized;
   return {
     id: `user:${entry.id}`,
-    label: entry.label || normalized,
+    label: entry.label || labelBase,
     type: "custom",
     features: Array.isArray(entry.features) ? entry.features : ["textAnalysis", "imageModeration"],
     domains: [normalized],
@@ -338,9 +486,16 @@ function getDefaultEnabledPlatformIds() {
   return SITE_CONFIGS.map((cfg) => cfg.id);
 }
 
-function resolveCurrentSiteConfig(hostname, userSettings = {}) {
+/**
+ * @param {string | { hostname: string, pathname?: string, href?: string }} page
+ *        Legacy: hostname string only (path-scoped user rules are not applied).
+ */
+function resolveCurrentSiteConfig(page, userSettings = {}) {
   const guardrailEnabled = userSettings.guardrailEnabled !== false;
   if (!guardrailEnabled) return null;
+
+  const hostname = typeof page === "string" ? page : page.hostname || "";
+  const pathname = typeof page === "string" ? "/" : normalizePathname(page.pathname != null ? page.pathname : "/");
 
   // Empty enabledPlatformIds → treat as "all built-in platforms enabled" (opt-out model).
   const enabledIds = Array.isArray(userSettings.enabledPlatformIds) && userSettings.enabledPlatformIds.length > 0
@@ -360,9 +515,21 @@ function resolveCurrentSiteConfig(hostname, userSettings = {}) {
     }
   }
 
-  // 2. User-added platforms (server-synced, per-user).
-  for (const entry of userAddedPlatforms) {
-    if (entry.domain && hostMatchesDomain(normalizedHost, entry.domain)) {
+  // 2. User-added platforms — longest pathPrefix first so specific rules beat host-only.
+  const userSorted = [...userAddedPlatforms].sort((a, b) => {
+    const la = (a.pathPrefix || "").length;
+    const lb = (b.pathPrefix || "").length;
+    return lb - la;
+  });
+  for (const entry of userSorted) {
+    if (!entry.domain) continue;
+    if (typeof page === "string") {
+      if (hostMatchesDomain(normalizedHost, entry.domain) && !(entry.pathPrefix && String(entry.pathPrefix))) {
+        return buildUserAddedConfig(entry);
+      }
+      continue;
+    }
+    if (userAddedEntryMatchesPage(entry, normalizedHost, pathname)) {
       return buildUserAddedConfig(entry);
     }
   }
@@ -383,4 +550,5 @@ window.ConfidentialAgentSiteConfigs = {
   getDefaultEnabledPlatformIds,
   buildUserAddedConfig,
   normalizeDomain,
+  parseUserSiteInput,
 };

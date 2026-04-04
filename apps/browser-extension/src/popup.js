@@ -1,5 +1,26 @@
 const DEFAULT_API_BASE_URL = "http://localhost:8080";
 
+const I18n = globalThis.ConfidentialAgentI18n;
+
+/** @type {string} */
+let popupLocale = "en";
+
+function tt(key, vars) {
+  return I18n.t(key, popupLocale, vars);
+}
+
+async function readPopupLocale() {
+  if (!I18n) return "en";
+  popupLocale = I18n.normalizeLocale(await I18n.getUiLocale());
+  return popupLocale;
+}
+
+function applyPopupI18n() {
+  if (!I18n) return;
+  I18n.applyDocumentI18n(document, popupLocale);
+  document.title = tt("opt_brand");
+}
+
 function checkApiHealthViaBackgroundOnce() {
   return new Promise((resolve) => {
     try {
@@ -33,20 +54,33 @@ async function checkApiHealthViaBackground() {
 }
 
 async function getSettings() {
-  const data = await chrome.storage.sync.get(["apiBaseUrl", "guardrailEnabled"]);
+  const data = await chrome.storage.sync.get([
+    "apiBaseUrl",
+    "guardrailEnabled",
+    "enabledPlatformIds",
+    "customDomains",
+    "userAddedPlatforms",
+  ]);
   const local = await chrome.storage.local.get(["stats"]);
   return {
     apiBaseUrl: data.apiBaseUrl || DEFAULT_API_BASE_URL,
     guardrailEnabled: data.guardrailEnabled !== false,
+    enabledPlatformIds: Array.isArray(data.enabledPlatformIds) ? data.enabledPlatformIds : [],
+    customDomains: Array.isArray(data.customDomains) ? data.customDomains : [],
+    userAddedPlatforms: Array.isArray(data.userAddedPlatforms) ? data.userAddedPlatforms : [],
     stats: local.stats || { analyzed: 0, blocked: 0 },
   };
 }
 
-async function getCurrentTabHostname() {
+async function getCurrentTabPageContext() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.url) return null;
-    return new URL(tab.url).hostname;
+    const u = new URL(tab.url);
+    if (u.protocol === "chrome:" || u.protocol === "chrome-extension:" || u.protocol === "edge:") {
+      return null;
+    }
+    return { hostname: u.hostname, pathname: u.pathname, href: u.href };
   } catch {
     return null;
   }
@@ -93,30 +127,36 @@ function setStatus(state, label, sub) {
   orbIcon.setAttribute("viewBox", "0 0 24 24");
 }
 
-function updatePlatformUI(hostname, guardrailEnabled) {
+function updatePlatformUI(pageContext, guardrailEnabled, syncSnapshot) {
   const api = window.ConfidentialAgentSiteConfigs;
   const dotEl   = document.getElementById("platformDot");
   const nameEl  = document.getElementById("platformName");
   const badgeEl = document.getElementById("platformBadge");
 
+  const hostname = pageContext?.hostname;
   if (!api || !hostname || !guardrailEnabled) {
     dotEl.className   = "platform-dot inactive";
-    nameEl.textContent = hostname || "No AI platform detected";
+    nameEl.textContent = hostname || tt("pop_no_platform");
     badgeEl.textContent = "—";
     badgeEl.className  = "platform-badge inactive";
     return;
   }
 
-  const cfg = api.resolveCurrentSiteConfig(hostname, { guardrailEnabled: true });
+  const cfg = api.resolveCurrentSiteConfig(pageContext, {
+    guardrailEnabled: true,
+    enabledPlatformIds: syncSnapshot?.enabledPlatformIds,
+    customDomains: syncSnapshot?.customDomains,
+    userAddedPlatforms: syncSnapshot?.userAddedPlatforms,
+  });
   if (cfg) {
     dotEl.className    = "platform-dot";
     nameEl.textContent = cfg.label || cfg.id;
-    badgeEl.textContent = "Protected";
+    badgeEl.textContent = tt("pop_protected");
     badgeEl.className  = "platform-badge";
   } else {
     dotEl.className    = "platform-dot inactive";
     nameEl.textContent = hostname;
-    badgeEl.textContent = "Not monitored";
+    badgeEl.textContent = tt("pop_not_monitored");
     badgeEl.className  = "platform-badge inactive";
   }
 }
@@ -126,20 +166,23 @@ async function checkApiHealth(apiBaseUrl) {
   const res = await checkApiHealthViaBackground();
   if (res.ok) {
     const host = base.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-    setStatus("ok", "API Connected", host);
+    setStatus("ok", tt("pop_api_ok"), host);
     return;
   }
   if (res.status) {
-    setStatus("offline", "API Error", `HTTP ${res.status} · ${base}`);
+    setStatus("offline", tt("pop_api_err"), `HTTP ${res.status} · ${base}`);
     return;
   }
   const detail = res.error || "Network error";
   const tried = res.apiBaseUrl || base;
-  setStatus("offline", "API Unreachable", `${detail} · ${tried}`);
+  setStatus("offline", tt("pop_api_unreachable"), `${detail} · ${tried}`);
 }
 
 async function init() {
-  const { apiBaseUrl, guardrailEnabled, stats } = await getSettings();
+  await readPopupLocale();
+  applyPopupI18n();
+
+  const { apiBaseUrl, guardrailEnabled, stats, ...syncSnapshot } = await getSettings();
 
   // Quick toggle
   const toggle = document.getElementById("quickToggle");
@@ -157,11 +200,29 @@ async function init() {
   document.getElementById("statBlocked").textContent  = stats.blocked  ?? 0;
 
   // Platform detection
-  const hostname = await getCurrentTabHostname();
-  updatePlatformUI(hostname, guardrailEnabled);
+  const pageContext = await getCurrentTabPageContext();
+  updatePlatformUI(pageContext, guardrailEnabled, syncSnapshot);
+
+  setStatus("checking", tt("pop_status_connecting"), tt("pop_status_checking"));
 
   // API health (fires last — UI is already rendered)
   await checkApiHealth(apiBaseUrl);
+
+  chrome.storage.onChanged.addListener(async (changes, area) => {
+    if (area === "sync" && changes.uiLocale && (changes.uiLocale.newValue === "en" || changes.uiLocale.newValue === "fr")) {
+      popupLocale = changes.uiLocale.newValue;
+      applyPopupI18n();
+      const { apiBaseUrl: url } = await getSettings();
+      await checkApiHealth(url);
+      const pageCtx2 = await getCurrentTabPageContext();
+      const data = await chrome.storage.sync.get(["guardrailEnabled", "enabledPlatformIds", "customDomains", "userAddedPlatforms"]);
+      updatePlatformUI(pageCtx2, data.guardrailEnabled !== false, {
+        enabledPlatformIds: Array.isArray(data.enabledPlatformIds) ? data.enabledPlatformIds : [],
+        customDomains: Array.isArray(data.customDomains) ? data.customDomains : [],
+        userAddedPlatforms: Array.isArray(data.userAddedPlatforms) ? data.userAddedPlatforms : [],
+      });
+    }
+  });
 }
 
 init().catch(console.warn);

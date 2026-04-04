@@ -65,3 +65,20 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user
+
+
+def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> dict | None:
+    """Same as get_current_user but returns None when no/invalid token (e.g. optional auth on /analyze)."""
+    if not credentials or credentials.scheme.lower() != "bearer":
+        return None
+    try:
+        payload = decode_access_token(credentials.credentials)
+        user_id = payload.get("sub")
+    except Exception:
+        return None
+    if not user_id:
+        return None
+    user = get_user_store().get_user_by_id(user_id)
+    return user if user else None

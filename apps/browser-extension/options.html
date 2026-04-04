@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Confidential Agent — Settings</title>
+  <title data-i18n-title="opt_page_title">Confidential Agent — Settings</title>
   <link rel="stylesheet" href="tailwind.output.css" />
 </head>
 <body class="bg-slate-50 text-slate-800 text-[14px] min-h-screen">
@@ -14,16 +14,32 @@
     <div class="w-8 h-8 rounded-[8px] overflow-hidden bg-white flex items-center justify-center ring-1 ring-slate-200 shadow-sm">
       <img src="icons/icon-128.png" alt="" width="32" height="32" class="w-full h-full object-contain" />
     </div>
-    <span class="text-[15px] font-bold text-slate-900">Confidential Agent</span>
-    <span class="text-[11px] text-slate-400 font-medium">Settings</span>
+    <span class="text-[15px] font-bold text-slate-900" data-i18n="opt_brand">Confidential Agent</span>
+    <span class="text-[11px] text-slate-400 font-medium" data-i18n="opt_settings">Settings</span>
   </div>
-  <button id="saveBtn"
-    class="h-8 px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-[12.5px] font-semibold rounded-lg transition-colors shadow-sm">
+  <button id="saveBtn" type="button"
+    class="h-8 px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-[12.5px] font-semibold rounded-lg transition-colors shadow-sm"
+    data-i18n="opt_save">
     Save settings
   </button>
 </header>
 
 <main class="max-w-xl mx-auto px-4 py-6 flex flex-col gap-5">
+
+  <!-- ── Language ─────────────────────────────────────────────────────────── -->
+  <section class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+    <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
+      <div class="w-7 h-7 bg-slate-100 rounded-[7px] flex items-center justify-center shrink-0 text-[14px]">🌐</div>
+      <div class="flex-1 min-w-0">
+        <div class="text-[14px] font-bold" data-i18n="language_section_title">Language</div>
+        <div class="text-[12px] text-slate-500" data-i18n="language_section_subtitle">Interface language</div>
+      </div>
+      <select id="uiLocaleSelect" class="h-9 px-3 border border-slate-200 rounded-lg text-[13px] bg-slate-50 font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+        <option value="en">English</option>
+        <option value="fr">Français</option>
+      </select>
+    </div>
+  </section>
 
   <!-- ── Account ──────────────────────────────────────────────────────────── -->
   <section class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
@@ -34,29 +50,31 @@
         </svg>
       </div>
       <div>
-        <div class="text-[14px] font-bold">Account</div>
-        <div class="text-[12px] text-slate-500">Sync your settings and platform list across devices</div>
+        <div class="text-[14px] font-bold" data-i18n="opt_account_title">Account</div>
+        <div class="text-[12px] text-slate-500" data-i18n="opt_account_subtitle">Sync your settings and platform list across devices</div>
       </div>
     </div>
 
     <!-- Logged-out state -->
     <div id="authFormArea" class="px-5 py-5 flex flex-col gap-4">
-      <p class="text-[12px] text-slate-500 leading-relaxed">
+      <p class="text-[12px] text-slate-500 leading-relaxed" data-i18n="opt_account_blurb">
         Sign in to save your platform list to your account. Each user manages their own platforms independently.
       </p>
       <div class="flex flex-col gap-2.5">
-        <input id="authEmail" type="email" placeholder="Email address"
+        <input id="authEmail" type="email" data-i18n-placeholder="opt_email_ph" placeholder="Email address"
           class="h-9 px-3 border border-slate-200 rounded-lg text-[13px] bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all w-full" />
-        <input id="authPassword" type="password" placeholder="Password"
+        <input id="authPassword" type="password" data-i18n-placeholder="opt_password_ph" placeholder="Password"
           class="h-9 px-3 border border-slate-200 rounded-lg text-[13px] bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all w-full" />
         <p id="authError" class="text-[11.5px] text-red-500 hidden"></p>
         <div class="flex gap-2 pt-0.5">
-          <button id="loginBtn"
-            class="flex-1 h-8 bg-indigo-600 hover:bg-indigo-700 text-white text-[12.5px] font-semibold rounded-lg transition-colors">
+          <button id="loginBtn" type="button"
+            class="flex-1 h-8 bg-indigo-600 hover:bg-indigo-700 text-white text-[12.5px] font-semibold rounded-lg transition-colors"
+            data-i18n="opt_login">
             Log in
           </button>
-          <button id="signupBtn"
-            class="flex-1 h-8 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[12.5px] font-semibold rounded-lg transition-colors border border-slate-200">
+          <button id="signupBtn" type="button"
+            class="flex-1 h-8 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[12.5px] font-semibold rounded-lg transition-colors border border-slate-200"
+            data-i18n="opt_signup">
             Sign up
           </button>
         </div>
@@ -76,12 +94,13 @@
             <div id="authUserEmail" class="text-[13px] font-semibold text-slate-800"></div>
             <div class="flex items-center gap-1 mt-0.5">
               <span class="w-1.5 h-1.5 bg-green-500 rounded-full inline-block"></span>
-              <span class="text-[11px] text-slate-500">Settings synced to your account</span>
+              <span class="text-[11px] text-slate-500" data-i18n="opt_synced">Settings synced to your account</span>
             </div>
           </div>
         </div>
-        <button id="logoutBtn"
-          class="h-7 px-3 text-[11.5px] font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+        <button id="logoutBtn" type="button"
+          class="h-7 px-3 text-[11.5px] font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+          data-i18n="opt_logout">
           Log out
         </button>
       </div>
@@ -98,36 +117,39 @@
         </svg>
       </div>
       <div>
-        <div class="text-[14px] font-bold">API Connection</div>
-        <div class="text-[12px] text-slate-500">Backend service URL</div>
+        <div class="text-[14px] font-bold" data-i18n="opt_api_title">API Connection</div>
+        <div class="text-[12px] text-slate-500" data-i18n="opt_api_subtitle">Backend service URL</div>
       </div>
     </div>
     <div class="px-5 py-5 flex flex-col gap-3">
       <div>
-        <p class="text-[12px] font-semibold text-slate-600 mb-2">Quick presets</p>
+        <p class="text-[12px] font-semibold text-slate-600 mb-2" data-i18n="opt_quick_presets">Quick presets</p>
         <div class="flex flex-wrap gap-2">
           <button type="button" id="useLocalApiBtn"
-            class="h-8 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[12px] font-semibold rounded-lg border border-slate-200 transition-colors">
+            class="h-8 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[12px] font-semibold rounded-lg border border-slate-200 transition-colors"
+            data-i18n="opt_preset_local">
             Local · localhost:8080
           </button>
           <button type="button" id="useProdApiBtn"
-            class="h-8 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[12px] font-semibold rounded-lg border border-indigo-200 transition-colors">
+            class="h-8 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[12px] font-semibold rounded-lg border border-indigo-200 transition-colors"
+            data-i18n="opt_preset_prod">
             Production · Koyeb
           </button>
         </div>
       </div>
       <p id="apiPresetLabel" class="text-[11px] text-slate-500 leading-snug"></p>
       <div>
-        <label class="text-[12px] font-semibold text-slate-600 mb-1.5 block" for="apiBaseUrl">Backend URL</label>
-        <input id="apiBaseUrl" type="url" placeholder="http://localhost:8080"
+        <label class="text-[12px] font-semibold text-slate-600 mb-1.5 block" for="apiBaseUrl" data-i18n="opt_backend_url">Backend URL</label>
+        <input id="apiBaseUrl" type="url" data-i18n-placeholder="opt_backend_url_ph" placeholder="http://localhost:8080"
           class="h-9 px-3 border border-slate-200 rounded-lg text-[13px] bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all w-full font-mono" />
       </div>
       <p id="activeApiUrlHint" class="text-[11px] text-slate-400 font-mono break-all"></p>
       <button type="button" id="testConnectionBtn"
-        class="self-start h-8 px-3.5 bg-white hover:bg-slate-50 text-slate-700 text-[12px] font-semibold rounded-lg border border-slate-200 transition-colors">
+        class="self-start h-8 px-3.5 bg-white hover:bg-slate-50 text-slate-700 text-[12px] font-semibold rounded-lg border border-slate-200 transition-colors"
+        data-i18n="opt_test_connection">
         Test connection
       </button>
-      <p class="text-[11px] text-slate-400 leading-relaxed">
+      <p class="text-[11px] text-slate-400 leading-relaxed" data-i18n="opt_api_custom_hint">
         For a custom API host, save settings once and approve the permission prompt so the extension can reach your server.
       </p>
     </div>
@@ -142,16 +164,16 @@
         </svg>
       </div>
       <div>
-        <div class="text-[14px] font-bold">Protection</div>
-        <div class="text-[12px] text-slate-500">Core guardrail and anonymization settings</div>
+        <div class="text-[14px] font-bold" data-i18n="opt_protection_title">Protection</div>
+        <div class="text-[12px] text-slate-500" data-i18n="opt_protection_subtitle">Core guardrail and anonymization settings</div>
       </div>
     </div>
     <div class="px-5 py-5 flex flex-col gap-4">
       <!-- Guardrail toggle -->
       <div class="flex items-start justify-between gap-4">
         <div class="flex-1">
-          <div class="text-[13.5px] font-semibold">Enable guardrail</div>
-          <div class="text-[12px] text-slate-500 mt-1 leading-relaxed">
+          <div class="text-[13.5px] font-semibold" data-i18n="opt_guardrail">Enable guardrail</div>
+          <div class="text-[12px] text-slate-500 mt-1 leading-relaxed" data-i18n="opt_guardrail_desc">
             Master switch. When off, no analysis is performed on any platform.
           </div>
         </div>
@@ -165,8 +187,8 @@
       <!-- Auto-anonymize -->
       <div class="flex items-start justify-between gap-4">
         <div class="flex-1">
-          <div class="text-[13.5px] font-semibold">Auto-anonymize sensitive data</div>
-          <div class="text-[12px] text-slate-500 mt-1 leading-relaxed">
+          <div class="text-[13.5px] font-semibold" data-i18n="opt_auto_anon">Auto-anonymize sensitive data</div>
+          <div class="text-[12px] text-slate-500 mt-1 leading-relaxed" data-i18n="opt_auto_anon_desc">
             When on, the AI automatically redacts detected sensitive fragments instead of asking you to edit manually.
           </div>
         </div>
@@ -189,15 +211,15 @@
         </svg>
       </div>
       <div>
-        <div class="text-[14px] font-bold">Image Moderation</div>
-        <div class="text-[12px] text-slate-500">Scan uploads for sensitive visual content</div>
+        <div class="text-[14px] font-bold" data-i18n="opt_imgmod_title">Image Moderation</div>
+        <div class="text-[12px] text-slate-500" data-i18n="opt_imgmod_subtitle">Scan uploads for sensitive visual content</div>
       </div>
     </div>
     <div class="px-5 py-5 flex flex-col gap-4">
       <div class="flex items-start justify-between gap-4">
         <div class="flex-1">
-          <div class="text-[13.5px] font-semibold">Enable image moderation</div>
-          <div class="text-[12px] text-slate-500 mt-1 leading-relaxed">
+          <div class="text-[13.5px] font-semibold" data-i18n="opt_imgmod_enable">Enable image moderation</div>
+          <div class="text-[12px] text-slate-500 mt-1 leading-relaxed" data-i18n="opt_imgmod_enable_desc">
             Every image you attach or paste is analyzed <em>before</em> upload. Detects sexual content,
             graphic violence, hate symbols, self-harm and harassment. Works on AI platforms and social networks.
           </div>
@@ -212,7 +234,7 @@
         <svg class="w-4 h-4 stroke-slate-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round">
           <circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>
         </svg>
-        <p class="text-[11.5px] text-slate-500 leading-relaxed">
+        <p class="text-[11.5px] text-slate-500 leading-relaxed" data-i18n-html="opt_imgmod_note_html">
           Requires an OpenAI API key on the backend. Uses <strong>omni-moderation-latest</strong>.
           If no key is configured the extension fails open — uploads are not blocked.
         </p>
@@ -229,8 +251,8 @@
         </svg>
       </div>
       <div>
-        <div class="text-[14px] font-bold">Protected Platforms</div>
-        <div class="text-[12px] text-slate-500">Choose which platforms are monitored</div>
+        <div class="text-[14px] font-bold" data-i18n="opt_platforms_title">Protected Platforms</div>
+        <div class="text-[12px] text-slate-500" data-i18n="opt_platforms_subtitle">Choose which platforms are monitored</div>
       </div>
     </div>
     <div class="px-5 py-5 flex flex-col gap-5">
@@ -238,8 +260,8 @@
       <!-- AI platforms group -->
       <div>
         <div class="flex items-center gap-2 mb-2.5">
-          <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">AI</span>
-          <span class="text-[12px] font-semibold text-slate-600">AI Assistants</span>
+          <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200" data-i18n="opt_ai_badge">AI</span>
+          <span class="text-[12px] font-semibold text-slate-600" data-i18n="opt_ai_group">AI Assistants</span>
         </div>
         <div id="platformsAI" class="flex flex-col gap-1.5"></div>
       </div>
@@ -247,8 +269,8 @@
       <!-- Social platforms group -->
       <div>
         <div class="flex items-center gap-2 mb-2.5">
-          <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 border border-sky-200">SOCIAL</span>
-          <span class="text-[12px] font-semibold text-slate-600">Social Networks</span>
+          <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 border border-sky-200" data-i18n="opt_social_badge">SOCIAL</span>
+          <span class="text-[12px] font-semibold text-slate-600" data-i18n="opt_social_group">Social Networks</span>
         </div>
         <div id="platformsSocial" class="flex flex-col gap-1.5"></div>
       </div>
@@ -266,12 +288,13 @@
           </svg>
         </div>
         <div>
-          <div class="text-[14px] font-bold">My Custom Platforms</div>
-          <div class="text-[12px] text-slate-500">Your personal list — synced to your account when logged in</div>
+          <div class="text-[14px] font-bold" data-i18n="opt_custom_title">My Custom Platforms</div>
+          <div class="text-[12px] text-slate-500" data-i18n="opt_custom_subtitle">Your personal list — synced to your account when logged in</div>
         </div>
       </div>
       <span id="authRequiredBadge"
-        class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 border border-violet-200">
+        class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 border border-violet-200"
+        data-i18n="opt_login_sync_badge">
         Login to sync
       </span>
     </div>
@@ -281,32 +304,36 @@
       <div id="userAddedPlatformsList" class="flex flex-col gap-2"></div>
 
       <!-- Empty state -->
-      <p id="userAddedEmpty" class="text-[12px] text-slate-400 text-center py-2 hidden">
+      <p id="userAddedEmpty" class="text-[12px] text-slate-400 text-center py-2 hidden" data-i18n="opt_no_custom">
         No custom platforms added yet.
       </p>
 
       <!-- Add form -->
       <div class="flex flex-col gap-2.5 pt-1 border-t border-slate-100">
-        <p class="text-[12px] font-semibold text-slate-600">Add a platform</p>
+        <p class="text-[12px] font-semibold text-slate-600" data-i18n="opt_add_platform">Add a platform</p>
+        <p class="text-[11px] text-slate-500 leading-snug -mt-1" data-i18n="opt_domain_hint">
+          Enter a domain for the whole site, or a full URL with a path to limit scope.
+        </p>
         <div class="flex gap-2">
-          <input id="newPlatformDomain" type="text" placeholder="example.com"
+          <input id="newPlatformDomain" type="text" data-i18n-placeholder="opt_domain_ph" placeholder="example.com"
             class="flex-1 h-8 px-3 border border-slate-200 rounded-lg text-[12.5px] bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:bg-white transition-all font-mono" />
-          <input id="newPlatformLabel" type="text" placeholder="Label (optional)"
+          <input id="newPlatformLabel" type="text" data-i18n-placeholder="opt_label_ph" placeholder="Label (optional)"
             class="w-36 h-8 px-3 border border-slate-200 rounded-lg text-[12.5px] bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:bg-white transition-all" />
         </div>
         <div class="flex items-center gap-4">
           <label class="flex items-center gap-1.5 cursor-pointer select-none">
             <input type="checkbox" id="newPlatformTextAnalysis" checked
               class="w-3.5 h-3.5 accent-teal-600 cursor-pointer" />
-            <span class="text-[12px] text-slate-600">Text DLP</span>
+            <span class="text-[12px] text-slate-600" data-i18n="opt_text_dlp">Text DLP</span>
           </label>
           <label class="flex items-center gap-1.5 cursor-pointer select-none">
             <input type="checkbox" id="newPlatformImageMod" checked
               class="w-3.5 h-3.5 accent-teal-600 cursor-pointer" />
-            <span class="text-[12px] text-slate-600">Image moderation</span>
+            <span class="text-[12px] text-slate-600" data-i18n="opt_image_mod_short">Image moderation</span>
           </label>
-          <button id="addPlatformBtn"
-            class="ml-auto h-8 px-4 bg-teal-600 hover:bg-teal-700 text-white text-[12px] font-semibold rounded-lg transition-colors">
+          <button id="addPlatformBtn" type="button"
+            class="ml-auto h-8 px-4 bg-teal-600 hover:bg-teal-700 text-white text-[12px] font-semibold rounded-lg transition-colors"
+            data-i18n="opt_add_btn">
             + Add
           </button>
         </div>
@@ -322,11 +349,12 @@
     <svg class="w-3.5 h-3.5 stroke-emerald-400" viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
       <polyline points="20 6 9 17 4 12"/>
     </svg>
-    <span id="saveNoticeText">Settings saved</span>
+    <span id="saveNoticeText" data-i18n="opt_save_notice">Settings saved</span>
   </div>
 
 </main>
 
+<script src="src/i18n.js"></script>
 <script src="src/siteConfigs.js"></script>
 <script src="src/options.js"></script>
 </body>

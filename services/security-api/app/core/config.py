@@ -50,6 +50,8 @@ class Settings(BaseModel):
     llm_classifier_model: str = os.getenv("LLM_CLASSIFIER_MODEL", "gpt-4.1-mini")
     llm_classifier_api_key: str = _llm_api_key
     llm_classifier_timeout_seconds: float = float(os.getenv("LLM_CLASSIFIER_TIMEOUT_SECONDS", "2.5"))
+    # Image moderation calls OpenAI /v1/moderations — often slower than text; too low → timeouts and fail-open ALLOW.
+    image_moderation_timeout_seconds: float = float(os.getenv("IMAGE_MODERATION_TIMEOUT_SECONDS", "45"))
     auth_secret_key: str = os.getenv(
         "AUTH_SECRET_KEY", "change-me-for-production-with-at-least-32-chars"
     )
@@ -83,6 +85,8 @@ class Settings(BaseModel):
     embedding_dimensions: int = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
     vector_match_min_score: float = float(os.getenv("VECTOR_MATCH_MIN_SCORE", "0.88"))
     vector_source_max_chars: int = int(os.getenv("VECTOR_SOURCE_MAX_CHARS", "4000"))
+    spacy_enabled: bool = os.getenv("SPACY_ENABLED", "true").lower() == "true"
+    spacy_model: str = os.getenv("SPACY_MODEL", "fr_core_news_sm")
 
 
 settings = Settings()

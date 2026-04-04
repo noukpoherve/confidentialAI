@@ -121,8 +121,16 @@ def _default_settings() -> dict:
         "enabledPlatformIds": [],
         "customDomains": [],
         "userAddedPlatforms": [],
+        "protected_urls": [],
         "updatedAt": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _clean_path_prefix(v) -> str | None:
+    if v is None:
+        return None
+    s = str(v).strip()
+    return s or None
 
 
 def _build_settings_obj(payload: dict) -> dict:
@@ -137,11 +145,13 @@ def _build_settings_obj(payload: dict) -> dict:
                 "id": str(p.get("id", "")),
                 "label": str(p.get("label", "")),
                 "domain": str(p.get("domain", "")),
+                "pathPrefix": _clean_path_prefix(p.get("pathPrefix")),
                 "features": list(p.get("features", ["textAnalysis", "imageModeration"])),
             }
             for p in payload.get("userAddedPlatforms", [])
             if p.get("domain")
         ],
+        "protected_urls": [str(u).strip() for u in payload.get("protected_urls", []) if str(u).strip()],
         "updatedAt": datetime.now(timezone.utc).isoformat(),
     }
 

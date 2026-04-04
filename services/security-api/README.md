@@ -22,8 +22,11 @@ Central security decision API for AI prompts.
 ```bash
 uv python pin 3.13
 uv sync --group dev
+uv run python -m spacy download fr_core_news_sm
 uv run uvicorn app.main:app --reload --port 8080
 ```
+
+The spaCy model adds phrase-based **LEGAL_HR** detection on top of regex. If the model is missing, the API still runs; set `SPACY_ENABLED=false` to skip loading spaCy.
 
 ## Example request
 

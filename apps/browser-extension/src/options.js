@@ -14,6 +14,56 @@
 const API_URL_LOCAL = "http://localhost:8080";
 const API_URL_PRODUCTION = "https://confidentialai.koyeb.app";
 
+/**
+ * How we choose "development" vs "production" API preset UI:
+ * 1. Optional override: `globalThis.__CONFIDENTIAL_AGENT_BUILD__` === "production" | "development"
+ * 2. Else `chrome.management.getSelf()`: installType "development" = unpacked → dev UI; store/sideload/etc. → prod UI
+ * 3. Else fallback "development" (safe default if the API is unavailable)
+ */
+/** @type {"development" | "production" | null} */
+let resolvedApiPresetProfile = null;
+
+async function resolveApiPresetProfile() {
+  if (resolvedApiPresetProfile) return resolvedApiPresetProfile;
+
+  const override = globalThis.__CONFIDENTIAL_AGENT_BUILD__;
+  if (override === "production" || override === "development") {
+    resolvedApiPresetProfile = override;
+    return resolvedApiPresetProfile;
+  }
+
+  try {
+    const info = await new Promise((resolve, reject) => {
+      if (!chrome.management?.getSelf) {
+        reject(new Error("management API missing"));
+        return;
+      }
+      chrome.management.getSelf((i) => {
+        if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+        else resolve(i);
+      });
+    });
+    resolvedApiPresetProfile = info.installType === "development" ? "development" : "production";
+  } catch {
+    resolvedApiPresetProfile = "development";
+  }
+  return resolvedApiPresetProfile;
+}
+
+function defaultApiBaseUrlForBuild() {
+  return resolvedApiPresetProfile === "production" ? API_URL_PRODUCTION : API_URL_LOCAL;
+}
+
+function applyApiPresetButtonsVisibility() {
+  const localBtn = $("useLocalApiBtn");
+  if (!localBtn) return;
+  if (resolvedApiPresetProfile === "production") {
+    localBtn.classList.add("hidden");
+  } else {
+    localBtn.classList.remove("hidden");
+  }
+}
+
 const SETTINGS_KEYS = [
   "apiBaseUrl",
   "guardrailEnabled",
@@ -22,11 +72,42 @@ const SETTINGS_KEYS = [
   "enabledPlatformIds",
   "customDomains",        // legacy
   "userAddedPlatforms",   // per-user, server-synced
+  "uiLocale",
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function $(id) { return document.getElementById(id); }
+
+const I18n = globalThis.ConfidentialAgentI18n;
+
+function tt(key, vars) {
+  const loc = currentUiLocale || "en";
+  return I18n.t(key, loc, vars);
+}
+
+/** @type {string} */
+let currentUiLocale = "en";
+
+async function readUiLocale() {
+  const raw = await I18n.getUiLocale();
+  currentUiLocale = I18n.normalizeLocale(raw);
+  return currentUiLocale;
+}
+
+function applyOptionsPageI18n() {
+  I18n.applyDocumentI18n(document, currentUiLocale);
+  const sel = $("uiLocaleSelect");
+  if (sel) {
+    sel.value = currentUiLocale;
+    const oEn = sel.querySelector('option[value="en"]');
+    const oFr = sel.querySelector('option[value="fr"]');
+    if (oEn) oEn.textContent = tt("language_en");
+    if (oFr) oFr.textContent = tt("language_fr");
+  }
+  document.title = tt("opt_page_title");
+  updateActiveUrlHint();
+}
 
 /** Call the API through the background service worker (avoids CORS issues). */
 async function apiCall({ method = "GET", path, body, useToken = true }) {
@@ -40,7 +121,7 @@ async function apiCall({ method = "GET", path, body, useToken = true }) {
 
 function inferApiPreset(raw) {
   try {
-    const u = new URL((raw || "").trim() || API_URL_LOCAL);
+    const u = new URL((raw || "").trim() || defaultApiBaseUrlForBuild());
     const h = u.hostname.toLowerCase();
     if ((h === "localhost" || h === "127.0.0.1") && u.port === "8080" && u.protocol === "http:") {
       return "local";
@@ -67,10 +148,10 @@ async function ensureHostPermissionIfNeeded(apiBaseUrl) {
   try {
     u = new URL(apiBaseUrl.trim());
   } catch {
-    return { ok: false, error: "Invalid backend URL." };
+    return { ok: false, error: tt("opt_invalid_url") };
   }
   if (u.protocol !== "http:" && u.protocol !== "https:") {
-    return { ok: false, error: "URL must start with http:// or https://." };
+    return { ok: false, error: tt("opt_url_scheme") };
   }
   const origin = `${u.protocol}//${u.host}`;
   const perm = { origins: [`${origin}/*`] };
@@ -79,9 +160,9 @@ async function ensureHostPermissionIfNeeded(apiBaseUrl) {
     const granted = await chrome.permissions.request(perm);
     return granted
       ? { ok: true }
-      : { ok: false, error: "Allow host access for this API, or use Local / Production presets." };
+      : { ok: false, error: tt("opt_perm_denied") };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Permission error" };
+    return { ok: false, error: e instanceof Error ? e.message : tt("opt_perm_error") };
   }
 }
 
@@ -90,14 +171,14 @@ function updateActiveUrlHint() {
   const labelEl = $("apiPresetLabel");
   const input = $("apiBaseUrl");
   if (!input) return;
-  const url = input.value.trim().replace(/\/+$/, "") || API_URL_LOCAL;
-  if (el) el.textContent = `Active base URL: ${url}`;
+  const url = input.value.trim().replace(/\/+$/, "") || defaultApiBaseUrlForBuild();
+  if (el) el.textContent = tt("opt_active_base", { url });
   if (labelEl) {
     const preset = inferApiPreset(input.value);
     const lines = {
-      local: "Environment: local development (no extra host permission).",
-      production: "Environment: production API (no extra host permission).",
-      custom: "Environment: custom API — Chrome will ask to allow this host when you save.",
+      local: tt("opt_env_local"),
+      production: tt("opt_env_production"),
+      custom: tt("opt_env_custom"),
     };
     labelEl.textContent = lines[preset];
   }
@@ -112,10 +193,10 @@ async function testApiConnection() {
     chrome.runtime.sendMessage({ type: "HEALTH_CHECK" }, (r) => resolve(r || { ok: false, error: "No response" }));
   });
   if (res.ok) {
-    showNotice("Connection OK — /health responded successfully.");
+    showNotice(tt("opt_conn_ok"));
   } else {
     const msg = res.error || (res.status ? `HTTP ${res.status}` : "Unreachable");
-    showNotice(`Connection failed: ${msg}`, true);
+    showNotice(tt("opt_conn_fail", { msg }), true);
   }
 }
 
@@ -189,7 +270,7 @@ async function doAuthRequest(endpoint) {
   const errorEl = $("authError");
 
   if (!email || !password) {
-    if (errorEl) { errorEl.textContent = "Please fill in email and password."; errorEl.classList.remove("hidden"); }
+    if (errorEl) { errorEl.textContent = tt("opt_fill_auth"); errorEl.classList.remove("hidden"); }
     return;
   }
   if (errorEl) errorEl.classList.add("hidden");
@@ -213,13 +294,13 @@ async function doAuthRequest(endpoint) {
   // After login, pull server settings and merge into local storage.
   await syncSettingsFromServer();
   await restore();
-  showNotice("Logged in. Settings synced from your account.");
+  showNotice(tt("opt_logged_in"));
 }
 
 async function doLogout() {
   await clearAuthStateStorage();
   renderAuthUI();
-  showNotice("Logged out.");
+  showNotice(tt("opt_logged_out"));
 }
 
 // ── Server settings sync ──────────────────────────────────────────────────────
@@ -302,13 +383,13 @@ function renderPlatforms(enabledIds) {
     badges.className = "flex gap-1 shrink-0";
     if (platform.features?.includes("imageModeration")) {
       const b = document.createElement("span");
-      b.textContent = "IMG";
+      b.textContent = tt("opt_badge_img");
       b.className = "text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-600 border border-rose-200";
       badges.appendChild(b);
     }
     if (platform.features?.includes("textAnalysis")) {
       const b = document.createElement("span");
-      b.textContent = "TXT";
+      b.textContent = tt("opt_badge_txt");
       b.className = "text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-600 border border-emerald-200";
       badges.appendChild(b);
     }
@@ -348,11 +429,15 @@ function renderUserAddedPlatforms() {
 
     const labelEl = document.createElement("div");
     labelEl.className = "text-[12.5px] font-semibold text-teal-800 truncate";
-    labelEl.textContent = platform.label || platform.domain;
+    labelEl.textContent =
+      platform.label
+      || (platform.pathPrefix ? `${platform.domain}${platform.pathPrefix}` : platform.domain);
 
     const domainEl = document.createElement("div");
     domainEl.className = "text-[11px] text-teal-600 font-mono truncate";
-    domainEl.textContent = platform.domain;
+    domainEl.textContent = platform.pathPrefix
+      ? `${platform.domain}${platform.pathPrefix}`
+      : platform.domain;
 
     info.append(labelEl, domainEl);
 
@@ -361,19 +446,19 @@ function renderUserAddedPlatforms() {
     badges.className = "flex gap-1 shrink-0";
     if (platform.features?.includes("textAnalysis")) {
       const b = document.createElement("span");
-      b.textContent = "TXT";
+      b.textContent = tt("opt_badge_txt");
       b.className = "text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200";
       badges.appendChild(b);
     }
     if (platform.features?.includes("imageModeration")) {
       const b = document.createElement("span");
-      b.textContent = "IMG";
+      b.textContent = tt("opt_badge_img");
       b.className = "text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-200";
       badges.appendChild(b);
     }
 
     const deleteBtn = document.createElement("button");
-    deleteBtn.title = "Remove";
+    deleteBtn.title = tt("opt_remove_title");
     deleteBtn.className = "w-6 h-6 flex items-center justify-center rounded-lg hover:bg-teal-100 transition-colors text-teal-500 hover:text-red-500 shrink-0";
     deleteBtn.innerHTML = `<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
       <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -397,14 +482,23 @@ function addUserPlatform() {
 
   const rawDomain = domainInput?.value.trim();
   if (!rawDomain) {
-    if (errorEl) { errorEl.textContent = "Please enter a domain (e.g. example.com)."; errorEl.classList.remove("hidden"); }
+    if (errorEl) { errorEl.textContent = tt("opt_domain_empty"); errorEl.classList.remove("hidden"); }
     return;
   }
   if (errorEl) errorEl.classList.add("hidden");
 
-  const domain = rawDomain.replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "").toLowerCase();
-  if (userAddedPlatforms.some((p) => p.domain === domain)) {
-    if (errorEl) { errorEl.textContent = "This domain is already in your list."; errorEl.classList.remove("hidden"); }
+  const Site = globalThis.ConfidentialAgentSiteConfigs;
+  const parsed = Site?.parseUserSiteInput ? Site.parseUserSiteInput(rawDomain) : null;
+  if (!parsed || !parsed.ok) {
+    if (errorEl) { errorEl.textContent = tt("opt_domain_invalid"); errorEl.classList.remove("hidden"); }
+    return;
+  }
+  const { host: domain, pathPrefix, display } = parsed;
+  const dup = userAddedPlatforms.some(
+    (p) => p.domain === domain && (p.pathPrefix || null) === (pathPrefix || null)
+  );
+  if (dup) {
+    if (errorEl) { errorEl.textContent = tt("opt_domain_dup"); errorEl.classList.remove("hidden"); }
     return;
   }
 
@@ -415,8 +509,9 @@ function addUserPlatform() {
 
   const newPlatform = {
     id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-    label: labelInput?.value.trim() || domain,
+    label: labelInput?.value.trim() || display,
     domain,
+    ...(pathPrefix ? { pathPrefix } : {}),
     features,
   };
 
@@ -432,8 +527,16 @@ function addUserPlatform() {
 async function restore() {
   const data = await chrome.storage.sync.get(SETTINGS_KEYS);
 
+  const locSel = $("uiLocaleSelect");
+  if (locSel) {
+    if (data.uiLocale === "en" || data.uiLocale === "fr") {
+      currentUiLocale = data.uiLocale;
+    }
+    locSel.value = currentUiLocale;
+  }
+
   const apiUrl = $("apiBaseUrl");
-  if (apiUrl) apiUrl.value = data.apiBaseUrl || API_URL_LOCAL;
+  if (apiUrl) apiUrl.value = data.apiBaseUrl || defaultApiBaseUrlForBuild();
   syncApiUrlUi();
 
   const guardrailEl = $("guardrailEnabled");
@@ -455,14 +558,14 @@ async function restore() {
 // ── Save ──────────────────────────────────────────────────────────────────────
 
 async function save() {
-  const apiUrl = $("apiBaseUrl")?.value.trim().replace(/\/+$/, "") || API_URL_LOCAL;
+  const apiUrl = $("apiBaseUrl")?.value.trim().replace(/\/+$/, "") || defaultApiBaseUrlForBuild();
   const guardrailEnabled = $("guardrailEnabled")?.checked !== false;
   const autoAnonymize = $("autoAnonymize")?.checked === true;
   const imageModerationEnabled = $("imageModerationEnabled")?.checked !== false;
 
   const perm = await ensureHostPermissionIfNeeded(apiUrl);
   if (!perm.ok) {
-    showNotice(perm.error || "Could not obtain permission for this API URL.", true);
+    showNotice(perm.error || tt("opt_save_perm_fail"), true);
     return;
   }
 
@@ -477,19 +580,25 @@ async function save() {
     customDomains: userAddedPlatforms.map((p) => p.domain),
   };
 
-  await chrome.storage.sync.set(payload);
+  await chrome.storage.sync.set({ ...payload, uiLocale: currentUiLocale });
 
   if (authState.token) {
     await syncSettingsToServer(payload);
-    showNotice("Settings saved & synced to your account.");
+    showNotice(tt("opt_saved_synced"));
   } else {
-    showNotice("Settings saved locally.");
+    showNotice(tt("opt_saved_local"));
   }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 async function init() {
+  if (!I18n) {
+    console.warn("ConfidentialAgentI18n missing");
+    return;
+  }
+  await readUiLocale();
+  await resolveApiPresetProfile();
   await loadAuthState();
   renderAuthUI();
 
@@ -498,7 +607,18 @@ async function init() {
     await syncSettingsFromServer();
   }
 
+  applyApiPresetButtonsVisibility();
   await restore();
+  applyOptionsPageI18n();
+
+  $("uiLocaleSelect")?.addEventListener("change", async (e) => {
+    const v = e.target && "value" in e.target ? String(e.target.value) : "en";
+    currentUiLocale = v === "fr" ? "fr" : "en";
+    await chrome.storage.sync.set({ uiLocale: currentUiLocale });
+    applyOptionsPageI18n();
+    renderPlatforms(enabledPlatformIds);
+    renderUserAddedPlatforms();
+  });
 
   // ── Bind events ─────────────────────────────────────────────────────────────
   $("saveBtn")?.addEventListener("click", save);
@@ -521,14 +641,14 @@ async function init() {
     syncApiUrlUi();
     // Persist immediately so the content script uses localhost without a separate Save click.
     await chrome.storage.sync.set({ apiBaseUrl: API_URL_LOCAL });
-    showNotice("Backend URL saved: local (http://localhost:8080).");
+    showNotice(tt("opt_notice_local_saved"));
   });
   $("useProdApiBtn")?.addEventListener("click", async () => {
     const input = $("apiBaseUrl");
     if (input) input.value = API_URL_PRODUCTION;
     syncApiUrlUi();
     await chrome.storage.sync.set({ apiBaseUrl: API_URL_PRODUCTION });
-    showNotice("Backend URL saved: production.");
+    showNotice(tt("opt_notice_prod_saved"));
   });
   $("apiBaseUrl")?.addEventListener("input", syncApiUrlUi);
   $("apiBaseUrl")?.addEventListener("change", syncApiUrlUi);

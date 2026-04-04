@@ -18,11 +18,14 @@ Safe mode (enabled by default via SAFE_MODE_ENABLED env var):
   protect general audiences.
 """
 
+import logging
 from datetime import datetime, timezone
 
 import httpx
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 from app.core.policy_engine import PolicyDecision
 
 # ── Risk weights per moderation category ────────────────────────────────────
@@ -100,15 +103,20 @@ def _call_moderation_api(image_base64: str, mime_type: str) -> dict | None:
     }
 
     try:
-        # Image analysis may take longer than text — use a doubled timeout.
-        timeout = settings.llm_classifier_timeout_seconds * 2
+        timeout = settings.image_moderation_timeout_seconds
         with httpx.Client(timeout=timeout) as client:
             response = client.post(url, headers=headers, json=body)
         if not response.is_success:
+            logger.warning(
+                "OpenAI moderation HTTP %s for image: %s",
+                response.status_code,
+                (response.text or "")[:300],
+            )
             return None
         results = response.json().get("results", [])
         return results[0] if results else None
-    except Exception:
+    except Exception as exc:
+        logger.warning("OpenAI moderation request failed: %s", exc)
         return None
 
 

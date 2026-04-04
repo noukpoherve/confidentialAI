@@ -14,19 +14,50 @@
 const API_URL_LOCAL = "http://localhost:8080";
 const API_URL_PRODUCTION = "https://confidentialai.koyeb.app";
 
-/** Set in `src/extension-env.js` — `"production"` for store builds. */
-const IS_PRODUCTION_EXTENSION_BUILD =
-  typeof globalThis.__CONFIDENTIAL_AGENT_BUILD__ === "string" &&
-  globalThis.__CONFIDENTIAL_AGENT_BUILD__ === "production";
+/**
+ * How we choose "development" vs "production" API preset UI:
+ * 1. Optional override: `globalThis.__CONFIDENTIAL_AGENT_BUILD__` === "production" | "development"
+ * 2. Else `chrome.management.getSelf()`: installType "development" = unpacked → dev UI; store/sideload/etc. → prod UI
+ * 3. Else fallback "development" (safe default if the API is unavailable)
+ */
+/** @type {"development" | "production" | null} */
+let resolvedApiPresetProfile = null;
+
+async function resolveApiPresetProfile() {
+  if (resolvedApiPresetProfile) return resolvedApiPresetProfile;
+
+  const override = globalThis.__CONFIDENTIAL_AGENT_BUILD__;
+  if (override === "production" || override === "development") {
+    resolvedApiPresetProfile = override;
+    return resolvedApiPresetProfile;
+  }
+
+  try {
+    const info = await new Promise((resolve, reject) => {
+      if (!chrome.management?.getSelf) {
+        reject(new Error("management API missing"));
+        return;
+      }
+      chrome.management.getSelf((i) => {
+        if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+        else resolve(i);
+      });
+    });
+    resolvedApiPresetProfile = info.installType === "development" ? "development" : "production";
+  } catch {
+    resolvedApiPresetProfile = "development";
+  }
+  return resolvedApiPresetProfile;
+}
 
 function defaultApiBaseUrlForBuild() {
-  return IS_PRODUCTION_EXTENSION_BUILD ? API_URL_PRODUCTION : API_URL_LOCAL;
+  return resolvedApiPresetProfile === "production" ? API_URL_PRODUCTION : API_URL_LOCAL;
 }
 
 function applyApiPresetButtonsVisibility() {
   const localBtn = $("useLocalApiBtn");
   if (!localBtn) return;
-  if (IS_PRODUCTION_EXTENSION_BUILD) {
+  if (resolvedApiPresetProfile === "production") {
     localBtn.classList.add("hidden");
   } else {
     localBtn.classList.remove("hidden");
@@ -553,6 +584,7 @@ async function init() {
     return;
   }
   await readUiLocale();
+  await resolveApiPresetProfile();
   await loadAuthState();
   renderAuthUI();
 

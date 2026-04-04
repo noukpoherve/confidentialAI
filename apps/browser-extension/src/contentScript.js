@@ -13,13 +13,139 @@
   let uiLocale = I18n.normalizeLocale(await I18n.getUiLocale());
   const __ = (key, vars) => I18n.t(key, uiLocale, vars);
 
+  function mapDetectionTypeToAwarenessKey(type) {
+    const t = String(type || "").toUpperCase();
+    if (!t) return null;
+    if (t === "TOXIC_LANGUAGE") return "toxicity";
+    if (t === "IMAGE_SEXUAL_MINORS") return "image_sexual_minors";
+    if (t === "IMAGE_SEXUAL" || t === "IMAGE_PARTIAL_NUDITY") return "image_sexual";
+    if (t.includes("HARASSMENT")) return "harassment";
+    const dataPrivacyTypes = new Set([
+      "EMAIL",
+      "PHONE",
+      "IBAN",
+      "API_KEY",
+      "PASSWORD",
+      "TOKEN",
+      "INTERNAL_URL",
+      "SOURCE_CODE",
+      "LEGAL_HR",
+      "HARMFUL_URL",
+      "URL_CONFIDENTIELLE",
+    ]);
+    if (dataPrivacyTypes.has(t) || t.startsWith("LLM_")) return "data_privacy";
+    return null;
+  }
+
+  function pickAwarenessKeyFromDetections(detections) {
+    const keys = [];
+    const seen = new Set();
+    for (const d of detections || []) {
+      const k = mapDetectionTypeToAwarenessKey(d.type);
+      if (k && !seen.has(k)) {
+        seen.add(k);
+        keys.push(k);
+      }
+    }
+    const priority = [
+      "image_sexual_minors",
+      "image_sexual",
+      "harassment",
+      "toxicity",
+      "data_privacy",
+    ];
+    for (const p of priority) {
+      if (keys.includes(p)) return p;
+    }
+    return keys[0] || null;
+  }
+
+  /**
+   * Awareness copy uses the same I18n pipeline as the rest of the modal (`__` + uiLocale).
+   */
+  function appendAwarenessSection(container, detections, scrollTargetGetter) {
+    const detectionTypeKey = pickAwarenessKeyFromDetections(detections);
+    if (!detectionTypeKey) return;
+    const base = `awareness_${detectionTypeKey}_`;
+    const msgKey = `${base}message`;
+    const message = __(msgKey);
+    if (!message || message === msgKey) return;
+
+    const box = document.createElement("div");
+    Object.assign(box.style, {
+      marginTop: "12px",
+      padding: "12px",
+      background: "#f8fafc",
+      borderRadius: "10px",
+      border: "1px solid #e2e8f0",
+    });
+
+    const pMsg = document.createElement("p");
+    Object.assign(pMsg.style, {
+      margin: "0 0 8px 0",
+      fontSize: "12px",
+      lineHeight: "1.55",
+      color: "#334155",
+    });
+    pMsg.textContent = message;
+
+    const pLegal = document.createElement("p");
+    Object.assign(pLegal.style, {
+      margin: "0 0 8px 0",
+      fontSize: "12px",
+      lineHeight: "1.55",
+      color: "#475569",
+    });
+    pLegal.textContent = __(base + "legal");
+
+    const pDisc = document.createElement("p");
+    Object.assign(pDisc.style, {
+      margin: "0 0 0 0",
+      fontSize: "11px",
+      lineHeight: "1.5",
+      color: "#64748b",
+    });
+    pDisc.textContent = __(base + "disclaimer");
+
+    box.append(pMsg, pLegal, pDisc);
+
+    const ctaText = String(__(base + "cta") || "").trim();
+    if (ctaText) {
+      const ctaBtn = document.createElement("button");
+      ctaBtn.type = "button";
+      ctaBtn.textContent = ctaText;
+      Object.assign(ctaBtn.style, {
+        marginTop: "10px",
+        padding: "8px 12px",
+        borderRadius: "8px",
+        fontSize: "11px",
+        fontWeight: "600",
+        cursor: "pointer",
+        border: "1px solid #cbd5e1",
+        background: "#fff",
+        color: "#334155",
+        display: "inline-block",
+      });
+      ctaBtn.addEventListener("click", () => {
+        const el =
+          typeof scrollTargetGetter === "function" ? scrollTargetGetter() : scrollTargetGetter;
+        if (el && typeof el.scrollIntoView === "function") {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      });
+      box.appendChild(ctaBtn);
+    }
+
+    container.appendChild(box);
+  }
+
   chrome.storage.onChanged.addListener((changes, area) => {
     if (
       area === "sync" &&
       changes.uiLocale &&
       (changes.uiLocale.newValue === "en" || changes.uiLocale.newValue === "fr")
     ) {
-      uiLocale = changes.uiLocale.newValue;
+      uiLocale = I18n.normalizeLocale(changes.uiLocale.newValue);
     }
   });
 
@@ -941,6 +1067,8 @@
           : __("cs_desc_anon");
         body.appendChild(desc);
 
+        appendAwarenessSection(body, detections, () => panel.querySelector("[data-ca-prompt-actions]"));
+
         // Expandable editor
         const editWrap = document.createElement("div");
         editWrap.style.display = "none";
@@ -981,6 +1109,7 @@
 
         // ── Action buttons ────────────────────────────────────────────────────
         const actRow = document.createElement("div");
+        actRow.setAttribute("data-ca-prompt-actions", "true");
         Object.assign(actRow.style, { display: "flex", gap: "8px", flexWrap: "wrap" });
 
         function mkBtn(label, variant) {
@@ -1183,6 +1312,10 @@
           : __("cs_rephrase_desc_none");
         body.appendChild(desc);
 
+        appendAwarenessSection(body, detections, () =>
+          body.querySelector("[data-ca-suggestion-anchor]") || body.querySelector("[data-ca-rephrase-actions]")
+        );
+
         // ── Suggestion cards ─────────────────────────────────────────────────
         const labels = [__("cs_option_1"), __("cs_option_2"), __("cs_option_3")];
         if (suggestions.length > 0) {
@@ -1247,6 +1380,9 @@
             cardHeader.append(cardLabel, useBtn);
             card.append(cardHeader, cardText);
             card.addEventListener("click", () => cleanupAndResolve({ status: "auto", prompt: suggestion }));
+            if (idx === 0) {
+              card.setAttribute("data-ca-suggestion-anchor", "true");
+            }
             body.appendChild(card);
           });
         }
@@ -1278,6 +1414,7 @@
 
         // ── Action buttons ────────────────────────────────────────────────────
         const actRow = document.createElement("div");
+        actRow.setAttribute("data-ca-rephrase-actions", "true");
         Object.assign(actRow.style, { display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "14px" });
 
         function mkBtn2(label, variant) {
@@ -1776,6 +1913,10 @@
       }
       body.appendChild(pillsWrap);
 
+      appendAwarenessSection(body, decision.detections || [], () =>
+        body.querySelector("[data-ca-image-actions]")
+      );
+
       // Description
       const desc = Object.assign(document.createElement("div"), {
         textContent: isBlock
@@ -1790,6 +1931,7 @@
 
       // Action buttons
       const btnRow = document.createElement("div");
+      btnRow.setAttribute("data-ca-image-actions", "true");
       Object.assign(btnRow.style, {
         display: "flex", gap: "10px", justifyContent: "flex-end",
       });

@@ -304,6 +304,41 @@
       cs_mask_offensive: "Response hidden — potentially offensive content.",
       cs_toxic_with_samples: "This AI response contains potentially offensive language ({{samples}}). Review before using.",
       cs_toxic_generic: "This AI response contains potentially offensive or aggressive language. Review before using.",
+
+      awareness_toxicity_message:
+        "Hurtful language can have a lasting impact on others. Practice respectful exchanges for a healthier internet. 🤝",
+      awareness_toxicity_legal:
+        "In some countries, offensive or aggressive language online may have legal consequences under applicable laws.",
+      awareness_toxicity_disclaimer: "ℹ️ General information — not legal advice.",
+      awareness_toxicity_cta: "See suggested rephrasing",
+
+      awareness_image_sexual_message:
+        "Once published, an image can circulate indefinitely and damage your reputation permanently. Protect your image. 🛡️",
+      awareness_image_sexual_legal:
+        "In some countries, sharing intimate images without consent may lead to legal action under local legislation.",
+      awareness_image_sexual_disclaimer: "ℹ️ General information — not legal advice.",
+      awareness_image_sexual_cta: "Practice noble gestures",
+
+      awareness_image_sexual_minors_message:
+        "This type of content is strictly prohibited and may be automatically reported. 🚫",
+      awareness_image_sexual_minors_legal:
+        "In many countries, distributing such content constitutes a serious criminal offense.",
+      awareness_image_sexual_minors_disclaimer: "ℹ️ General information — not legal advice.",
+      awareness_image_sexual_minors_cta: "",
+
+      awareness_data_privacy_message:
+        "Your personal data deserves protection. Sharing sensitive information with an AI may compromise your privacy. 🔒",
+      awareness_data_privacy_legal:
+        "In some countries, processing personal data without consent may be regulated by specific data protection laws.",
+      awareness_data_privacy_disclaimer: "ℹ️ General information — not legal advice.",
+      awareness_data_privacy_cta: "Send anonymized version",
+
+      awareness_harassment_message:
+        "Online harassment can cause real and lasting harm. Choose words that build rather than destroy. 💙",
+      awareness_harassment_legal:
+        "In some countries, online harassment may be sanctioned under applicable local laws.",
+      awareness_harassment_disclaimer: "ℹ️ General information — not legal advice.",
+      awareness_harassment_cta: "See suggested rephrasing",
     },
     fr: {
       language_section_title: "Langue",
@@ -533,6 +568,41 @@
         "Cette réponse contient un langage potentiellement offensant ({{samples}}). Vérifiez avant utilisation.",
       cs_toxic_generic:
         "Cette réponse contient un langage potentiellement offensant ou agressif. Vérifiez avant utilisation.",
+
+      awareness_toxicity_message:
+        "Les propos blessants peuvent affecter durablement les personnes visées. Pratiquez des échanges respectueux pour un internet plus sain. 🤝",
+      awareness_toxicity_legal:
+        "Dans certains pays, des propos injurieux ou agressifs en ligne peuvent entraîner des conséquences légales selon les législations en vigueur.",
+      awareness_toxicity_disclaimer: "ℹ️ Information générale — pas un avis juridique.",
+      awareness_toxicity_cta: "Voir les reformulations proposées",
+
+      awareness_image_sexual_message:
+        "Une image publiée peut circuler indéfiniment et nuire durablement à votre réputation. Protégez votre image. 🛡️",
+      awareness_image_sexual_legal:
+        "Dans certains pays, le partage d'images intimes sans consentement peut entraîner des poursuites selon les législations locales.",
+      awareness_image_sexual_disclaimer: "ℹ️ Information générale — pas un avis juridique.",
+      awareness_image_sexual_cta: "Pratiquer les gestes nobles",
+
+      awareness_image_sexual_minors_message:
+        "Ce type de contenu est strictement interdit et peut faire l'objet d'un signalement automatique. 🚫",
+      awareness_image_sexual_minors_legal:
+        "Dans de nombreux pays, la diffusion de tels contenus constitue une infraction grave passible de poursuites pénales.",
+      awareness_image_sexual_minors_disclaimer: "ℹ️ Information générale — pas un avis juridique.",
+      awareness_image_sexual_minors_cta: "",
+
+      awareness_data_privacy_message:
+        "Vos données personnelles méritent d'être protégées. Partager des informations sensibles avec une IA peut compromettre votre confidentialité. 🔒",
+      awareness_data_privacy_legal:
+        "Dans certains pays, le traitement de données personnelles sans consentement peut être encadré par des réglementations spécifiques sur la protection des données.",
+      awareness_data_privacy_disclaimer: "ℹ️ Information générale — pas un avis juridique.",
+      awareness_data_privacy_cta: "Envoyer la version anonymisée",
+
+      awareness_harassment_message:
+        "Le harcèlement en ligne peut causer des dommages réels et durables. Choisissez des mots qui construisent plutôt que détruisent. 💙",
+      awareness_harassment_legal:
+        "Dans certains pays, le harcèlement en ligne peut être sanctionné selon les législations locales en vigueur.",
+      awareness_harassment_disclaimer: "ℹ️ Information générale — pas un avis juridique.",
+      awareness_harassment_cta: "Voir les reformulations proposées",
     },
   };
 

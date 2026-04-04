@@ -105,3 +105,14 @@ def test_legal_hr_phrases_detected():
         "Suite à un arrêt maladie, le médecin du travail propose un aménagement de poste."
     )
     assert "LEGAL_HR" in [h.hit_type for h in hits]
+
+
+def test_legal_hr_plural_arrets_maladie_via_spacy():
+    """Plural 'arrêts maladie' is not matched by the LEGAL_HR regex; spaCy should catch it."""
+    from app.core.spacy_detectors import is_spacy_legal_hr_ready
+
+    if not is_spacy_legal_hr_ready():
+        pytest.skip("spaCy model not installed; run: uv run python -m spacy download fr_core_news_sm")
+    hits = detect_sensitive_content("Des arrêts maladie répétés cette année.")
+    assert "LEGAL_HR" in [h.hit_type for h in hits]
+    assert any("arrêt" in h.raw_value.lower() for h in hits if h.hit_type == "LEGAL_HR")

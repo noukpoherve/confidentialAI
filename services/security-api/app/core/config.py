@@ -83,6 +83,8 @@ class Settings(BaseModel):
     embedding_dimensions: int = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
     vector_match_min_score: float = float(os.getenv("VECTOR_MATCH_MIN_SCORE", "0.88"))
     vector_source_max_chars: int = int(os.getenv("VECTOR_SOURCE_MAX_CHARS", "4000"))
+    spacy_enabled: bool = os.getenv("SPACY_ENABLED", "true").lower() == "true"
+    spacy_model: str = os.getenv("SPACY_MODEL", "fr_core_news_sm")
 
 
 settings = Settings()

@@ -7,6 +7,8 @@ class DetectorHit:
     hit_type: str
     raw_value: str
     confidence: float
+    span_start: int | None = None
+    span_end: int | None = None
 
 
 DETECTOR_PATTERNS: dict[str, re.Pattern[str]] = {
@@ -158,22 +160,26 @@ def _preview(text: str, max_len: int = 24) -> str:
 
 def detect_sensitive_content(prompt: str) -> list[DetectorHit]:
     """
-    Deterministic regex-based detection.
-    This layer is intentionally simple and explainable for V1.
+    Deterministic regex-based detection, optionally reinforced with spaCy phrase
+    matching for LEGAL_HR variants (see app.core.spacy_detectors).
     """
+    from app.core.spacy_detectors import collect_spacy_legal_hr_spans
+
     hits: list[DetectorHit] = []
 
     for hit_type, pattern in DETECTOR_PATTERNS.items():
         for match in pattern.finditer(prompt):
             raw_value = match.group(0)
-            # Already-redacted placeholders should not be re-flagged as sensitive.
             if REDACTED_PLACEHOLDER_PATTERN.search(raw_value):
                 continue
+            s, e = match.span()
             hits.append(
                 DetectorHit(
                     hit_type=hit_type,
                     raw_value=raw_value,
                     confidence=0.8 if hit_type != "SOURCE_CODE" else 0.65,
+                    span_start=s,
+                    span_end=e,
                 )
             )
 
@@ -181,15 +187,38 @@ def detect_sensitive_content(prompt: str) -> list[DetectorHit]:
         raw_value = match.group(0)
         if REDACTED_PLACEHOLDER_PATTERN.search(raw_value):
             continue
-        if not _is_plausible_swift_bic(raw_value.upper()):
+        token_upper = raw_value.upper()
+        if not _is_plausible_swift_bic(token_upper):
             continue
+        s, e = match.span()
         hits.append(
             DetectorHit(
                 hit_type="SWIFT_BIC",
                 raw_value=raw_value,
                 confidence=0.85,
+                span_start=s,
+                span_end=e,
             )
         )
+
+    legal_spans = [
+        (h.span_start, h.span_end)
+        for h in hits
+        if h.hit_type == "LEGAL_HR" and h.span_start is not None and h.span_end is not None
+    ]
+    for raw_value, s, e in collect_spacy_legal_hr_spans(prompt, legal_spans):
+        if REDACTED_PLACEHOLDER_PATTERN.search(raw_value):
+            continue
+        hits.append(
+            DetectorHit(
+                hit_type="LEGAL_HR",
+                raw_value=raw_value,
+                confidence=0.75,
+                span_start=s,
+                span_end=e,
+            )
+        )
+        legal_spans.append((s, e))
 
     return hits
 

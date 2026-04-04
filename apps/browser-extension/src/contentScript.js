@@ -6,6 +6,23 @@
     return;
   }
 
+  const I18n = globalThis.ConfidentialAgentI18n;
+  if (!I18n) {
+    return;
+  }
+  let uiLocale = I18n.normalizeLocale(await I18n.getUiLocale());
+  const __ = (key, vars) => I18n.t(key, uiLocale, vars);
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (
+      area === "sync" &&
+      changes.uiLocale &&
+      (changes.uiLocale.newValue === "en" || changes.uiLocale.newValue === "fr")
+    ) {
+      uiLocale = changes.uiLocale.newValue;
+    }
+  });
+
   async function loadUserSiteSettings() {
     try {
       const data = await chrome.storage.sync.get([
@@ -81,10 +98,10 @@
       animation: "ca-slide-in 0.2s ease",
     });
     const msg = Object.assign(document.createElement("span"), {
-      textContent: "🛡  Flagged image — remove it from your message, then click confirm to unlock Send.",
+      textContent: __("cs_flagged_image_banner"),
     });
     const dismissBtn = document.createElement("button");
-    dismissBtn.textContent = "I've removed it — unlock Send ✓";
+    dismissBtn.textContent = __("cs_unlock_send");
     Object.assign(dismissBtn.style, {
       background: "rgba(255,255,255,0.18)", border: "1.5px solid rgba(255,255,255,0.55)",
       color: "#fff", padding: "5px 14px", borderRadius: "7px",
@@ -344,6 +361,21 @@
     return false;
   }
 
+  /**
+   * Plain text as the user sees it in a rich / contenteditable field.
+   * Prefer innerText so line breaks between blocks (<p>, <div>, etc.) match the UI;
+   * textContent often concatenates blocks without newlines.
+   */
+  function readContentEditablePlainText(root) {
+    if (!(root instanceof HTMLElement)) return "";
+    try {
+      if (typeof root.innerText === "string") {
+        return root.innerText;
+      }
+    } catch (_) {}
+    return root.textContent || "";
+  }
+
   function readPromptValue(el) {
     if (!el) return "";
     if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
@@ -358,7 +390,13 @@
       const ta = sr.querySelector("textarea");
       if (ta instanceof HTMLTextAreaElement) return ta.value || "";
       const ce = sr.querySelector('[contenteditable="true"]');
-      if (ce instanceof HTMLElement) return ce.textContent || "";
+      if (ce instanceof HTMLElement) return readContentEditablePlainText(ce);
+    }
+    if (el.getAttribute?.("contenteditable") === "true") {
+      return readContentEditablePlainText(el);
+    }
+    if (el.isContentEditable) {
+      return readContentEditablePlainText(el);
     }
     return el.textContent || "";
   }
@@ -388,6 +426,7 @@
   }
 
   function setContentEditableValue(el, str) {
+    const want = String(str).replace(/\r\n/g, "\n");
     el.focus();
     try {
       const range = document.createRange();
@@ -400,18 +439,22 @@
     } catch (_) {}
     let inserted = false;
     try {
-      inserted = document.execCommand("insertText", false, str);
+      inserted = document.execCommand("insertText", false, want);
     } catch (_) {}
     const got = (el.innerText || el.textContent || "").replace(/\r\n/g, "\n");
-    const want = String(str).replace(/\r\n/g, "\n");
     if (!inserted || got !== want) {
-      el.textContent = str;
+      // innerText preserves line breaks for display; textContent alone often collapses them.
+      try {
+        el.innerText = want;
+      } catch (_) {
+        el.textContent = want;
+      }
       el.dispatchEvent(
         new InputEvent("input", {
           bubbles: true,
           cancelable: true,
           inputType: "insertReplacementText",
-          data: str,
+          data: want,
         })
       );
     }
@@ -421,7 +464,8 @@
 
   function writePromptValue(el, value) {
     if (!el) return;
-    const str = value == null ? "" : String(value);
+    let str = value == null ? "" : String(value);
+    str = I18n.localizeNerBracketPlaceholders(str, uiLocale);
 
     if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
       setNativeFormValue(el, str);
@@ -538,14 +582,14 @@
         background: "transparent", border: "1.5px solid #475569",
         borderRadius: "7px", cursor: "pointer", color: "#94a3b8",
       });
-      noBtn.textContent = "Cancel";
+      noBtn.textContent = __("cs_toast_cancel");
       const yesBtn = document.createElement("button");
       Object.assign(yesBtn.style, {
         padding: "6px 14px", fontSize: "12px", fontWeight: "600",
         background: "#6366f1", border: "1.5px solid #6366f1",
         borderRadius: "7px", cursor: "pointer", color: "#fff",
       });
-      yesBtn.textContent = "Confirm";
+      yesBtn.textContent = __("cs_toast_confirm");
       const cleanup = (val) => { el.remove(); resolve(val); };
       yesBtn.addEventListener("click", () => cleanup(true));
       noBtn.addEventListener("click", () => cleanup(false));
@@ -580,14 +624,14 @@
       background: "#fff", border: "1.5px solid #fcd34d", borderRadius: "6px",
       cursor: "pointer", color: "#78350f",
     });
-    keepBtn.textContent = "Keep visible";
+    keepBtn.textContent = __("cs_keep_visible");
     const hideBtn = document.createElement("button");
     Object.assign(hideBtn.style, {
       padding: "4px 10px", fontSize: "12px", fontWeight: "600",
       background: "#f59e0b", border: "1.5px solid #f59e0b", borderRadius: "6px",
       cursor: "pointer", color: "#fff",
     });
-    hideBtn.textContent = "Hide";
+    hideBtn.textContent = __("cs_hide");
     keepBtn.addEventListener("click", () => { banner.remove(); onDecision(true); });
     hideBtn.addEventListener("click", () => { banner.remove(); onDecision(false); });
     row.append(keepBtn, hideBtn);
@@ -648,7 +692,18 @@
   function notifyExtensionReloadRequired() {
     if (extensionReloadNoticeShown) return;
     extensionReloadNoticeShown = true;
-    showToast("Extension updated — please refresh this tab to restore protection.", "warning");
+    showToast(__("cs_ext_refresh"), "warning");
+  }
+
+  /**
+   * If the flag says no modal is open but panels are still in the DOM (e.g. interrupted
+   * animation), remove them so an older review does not reappear under a newer one.
+   */
+  function removeStaleConfidentialModalsIfAny() {
+    if (promptModalOpen) return;
+    try {
+      document.querySelectorAll('[data-confidential-agent-modal="true"]').forEach((node) => node.remove());
+    } catch (_) {}
   }
 
   async function safeSendMessage(message) {
@@ -664,12 +719,13 @@
       }
       return {
         ok: false,
-        error: messageText || "Unknown extension messaging error",
+        error: messageText || __("cs_unknown_msg_err"),
       };
     }
   }
 
   function showPromptReviewModal({ action, reasons, detections = [], riskScore = 0, originalPrompt, suggestedPrompt }) {
+    removeStaleConfidentialModalsIfAny();
     if (promptModalOpen) {
       return Promise.resolve({ status: "cancel", prompt: originalPrompt });
     }
@@ -685,17 +741,8 @@
         const headerBg = isBlock ? "#fef2f2" : isWarn ? "#fffbeb" : "#eff6ff";
         const pillBg   = isBlock ? "#fee2e2" : isWarn ? "#fef3c7" : "#dbeafe";
         const pillText = isBlock ? "#991b1b" : isWarn ? "#92400e" : "#1e40af";
-        const titleText = isBlock ? "Prompt blocked" : isWarn ? "Sensitive data detected" : "Prompt will be anonymized";
+        const titleText = isBlock ? __("cs_title_block") : isWarn ? __("cs_title_warn") : __("cs_title_anon");
         const headerEmoji = isBlock ? "🛡" : isWarn ? "⚠" : "🔵";
-
-        const TYPE_LABELS = {
-          API_KEY: "🔑 API Key", PASSWORD: "🔒 Password", TOKEN: "🎫 Token",
-          EMAIL: "✉ Email", PHONE: "📞 Phone", IBAN: "🏦 IBAN",
-          SWIFT_BIC: "🏛 SWIFT/BIC", LEGAL_HR: "📋 HR / santé / famille",
-          SOURCE_CODE: "💻 Source code", INTERNAL_URL: "🔗 Internal URL",
-          PROMPT_INJECTION: "⚠ Injection", LLM_SENSITIVE: "🤖 Semantic PII",
-          TOXIC_LANGUAGE: "💬 Toxic language", HARMFUL_URL: "🔗 Harmful link",
-        };
 
         // ── Panel container ──────────────────────────────────────────────────
         const panel = document.createElement("div");
@@ -742,7 +789,7 @@
 
         const hSub = document.createElement("div");
         Object.assign(hSub.style, { fontSize: "11px", color: "#64748b", marginTop: "1px" });
-        hSub.textContent = "Confidential Agent";
+        hSub.textContent = __("cs_brand_subtitle");
 
         hMeta.append(hTitle, hSub);
 
@@ -753,7 +800,7 @@
           padding: "2px 4px", borderRadius: "4px", display: "flex", alignItems: "center",
         });
         closeBtn.textContent = "×";
-        closeBtn.setAttribute("aria-label", "Close");
+        closeBtn.setAttribute("aria-label", __("cs_close_aria"));
 
         header.append(hIcon, hMeta, closeBtn);
 
@@ -777,7 +824,7 @@
               borderRadius: "999px", background: pillBg, color: pillText,
               fontSize: "11px", fontWeight: "600", letterSpacing: "0.02em",
             });
-            pill.textContent = TYPE_LABELS[d.type] || d.type;
+            pill.textContent = I18n.detectionLabel(d.type, uiLocale);
             pillsRow.appendChild(pill);
           }
           body.appendChild(pillsRow);
@@ -792,7 +839,7 @@
             display: "flex", justifyContent: "space-between",
             fontSize: "11px", fontWeight: "600", color: "#64748b", marginBottom: "5px",
           });
-          const barLbl = Object.assign(document.createElement("span"), { textContent: "Risk score" });
+          const barLbl = Object.assign(document.createElement("span"), { textContent: __("cs_risk_score") });
           const barVal = Object.assign(document.createElement("span"), { textContent: `${riskScore}%` });
           barVal.style.color = accent;
           barHead.append(barLbl, barVal);
@@ -816,10 +863,10 @@
           fontSize: "12px", color: "#64748b", marginBottom: "16px", lineHeight: "1.5",
         });
         desc.textContent = isBlock
-          ? "This prompt cannot be sent. Remove the flagged data before retrying."
+          ? __("cs_desc_block")
           : isWarn
-          ? "Review the detected content. You can auto-filter or edit manually before sending."
-          : "Sensitive data will be replaced with placeholders before the prompt is sent.";
+          ? __("cs_desc_warn")
+          : __("cs_desc_anon");
         body.appendChild(desc);
 
         // Expandable editor
@@ -834,13 +881,13 @@
           textTransform: "uppercase", letterSpacing: "0.06em",
         });
         editLbl.textContent = suggestedPrompt !== originalPrompt
-          ? "Anonymized prompt — review before sending"
-          : "Your prompt — edit to remove sensitive data";
+          ? __("cs_edit_label_anon")
+          : __("cs_edit_label_manual");
 
         const ta = document.createElement("textarea");
         // Pre-load with the anonymized version so the user only needs to
         // confirm or make minor adjustments — not re-do the entire redaction.
-        ta.value = suggestedPrompt || originalPrompt;
+        ta.value = I18n.localizeNerBracketPlaceholders(suggestedPrompt || originalPrompt, uiLocale);
         Object.assign(ta.style, {
           width: "100%", minHeight: "110px", maxHeight: "220px",
           fontFamily: "ui-monospace,SFMono-Regular,'Cascadia Code',monospace",
@@ -892,18 +939,18 @@
           return b;
         }
 
-        const autoBtn     = !isBlock ? mkBtn("Auto-filter & send", "primary") : null;
-        const editBtn     = mkBtn("Edit", "secondary");
-        const sendEditBtn = mkBtn("Send edited", "primary");
+        const autoBtn     = !isBlock ? mkBtn(__("cs_btn_auto_send"), "primary") : null;
+        const editBtn     = mkBtn(__("cs_btn_edit"), "secondary");
+        const sendEditBtn = mkBtn(__("cs_btn_send_edited"), "primary");
         sendEditBtn.style.display = "none";
-        const cancelBtn   = mkBtn("Cancel", "ghost");
+        const cancelBtn   = mkBtn(__("cs_btn_cancel"), "ghost");
 
         let editOpen = false;
         function toggleEdit() {
           editOpen = !editOpen;
           editWrap.style.display    = editOpen ? "block" : "none";
           sendEditBtn.style.display = editOpen ? "" : "none";
-          editBtn.textContent       = editOpen ? "Hide editor" : "Edit";
+          editBtn.textContent       = editOpen ? __("cs_btn_hide_editor") : __("cs_btn_edit");
           if (autoBtn) autoBtn.style.display = editOpen ? "none" : "";
           if (editOpen) setTimeout(() => ta.focus(), 40);
         }
@@ -939,6 +986,7 @@
 
         body.appendChild(actRow);
         panel.append(header, body);
+        document.querySelectorAll('[data-confidential-agent-modal="true"]').forEach((n) => n.remove());
         document.body.appendChild(panel);
 
         // For BLOCK: open the editor immediately so the anonymized text is
@@ -952,7 +1000,7 @@
         resolve({
           status: "fallback",
           prompt: originalPrompt,
-          error: error instanceof Error ? error.message : "Unknown modal rendering error",
+          error: error instanceof Error ? error.message : __("cs_modal_err"),
         });
       }
     });
@@ -971,6 +1019,7 @@
    * Returns a Promise<{ status, prompt }> consistent with showPromptReviewModal.
    */
   function showRephraseModal({ suggestions = [], originalPrompt, detections = [], riskScore = 0 }) {
+    removeStaleConfidentialModalsIfAny();
     if (promptModalOpen) {
       return Promise.resolve({ status: "cancel", prompt: originalPrompt });
     }
@@ -1015,10 +1064,10 @@
         hMeta.style.flex = "1";
         const hTitle = document.createElement("div");
         Object.assign(hTitle.style, { fontWeight: "700", fontSize: "14px", color: "#0f172a" });
-        hTitle.textContent = "Language improvement suggested";
+        hTitle.textContent = __("cs_rephrase_title");
         const hSub = document.createElement("div");
         Object.assign(hSub.style, { fontSize: "11px", color: "#64748b", marginTop: "1px" });
-        hSub.textContent = "Confidential Agent · Tone moderation";
+        hSub.textContent = __("cs_rephrase_sub");
         hMeta.append(hTitle, hSub);
         const closeBtn = document.createElement("button");
         Object.assign(closeBtn.style, {
@@ -1048,8 +1097,7 @@
               borderRadius: "999px", background: pillBg, color: pillText,
               fontSize: "11px", fontWeight: "600",
             });
-            const TYPE_LABELS_REPHRASE = { TOXIC_LANGUAGE: "💬 Offensive language", AGGRESSION: "😠 Aggression", PROFANITY: "🤬 Profanity", INSULT: "🗣 Insult", HATE_SPEECH: "⛔ Hate speech", HARASSMENT: "🚨 Harassment" };
-            pill.textContent = TYPE_LABELS_REPHRASE[d.type] || d.type;
+            pill.textContent = I18n.rephraseLabel(d.type, uiLocale);
             pillsRow.appendChild(pill);
           }
           body.appendChild(pillsRow);
@@ -1059,19 +1107,19 @@
         const desc = document.createElement("p");
         Object.assign(desc.style, { fontSize: "12px", color: "#64748b", marginBottom: "14px", lineHeight: "1.6" });
         desc.textContent = suggestions.length > 0
-          ? "Offensive or aggressive language was detected. Choose a kinder alternative, edit manually, or send the original."
-          : "Offensive or aggressive language was detected. Please review your message.";
+          ? __("cs_rephrase_desc_suggestions")
+          : __("cs_rephrase_desc_none");
         body.appendChild(desc);
 
         // ── Suggestion cards ─────────────────────────────────────────────────
-        const labels = ["💡 Option 1", "💡 Option 2", "💡 Option 3"];
+        const labels = [__("cs_option_1"), __("cs_option_2"), __("cs_option_3")];
         if (suggestions.length > 0) {
           const cardsLabel = document.createElement("div");
           Object.assign(cardsLabel.style, {
             fontSize: "10px", fontWeight: "700", color: "#7c3aed",
             textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px",
           });
-          cardsLabel.textContent = "Suggested alternatives";
+          cardsLabel.textContent = __("cs_suggested_alt");
           body.appendChild(cardsLabel);
 
           suggestions.forEach((suggestion, idx) => {
@@ -1101,10 +1149,10 @@
               fontSize: "10px", fontWeight: "700", color: "#7c3aed",
               textTransform: "uppercase", letterSpacing: "0.05em",
             });
-            cardLabel.textContent = labels[idx] || `Option ${idx + 1}`;
+            cardLabel.textContent = labels[idx] || __("cs_option_n", { n: idx + 1 });
             const useBtn = document.createElement("button");
             useBtn.type = "button";
-            useBtn.textContent = "Use this ✓";
+            useBtn.textContent = __("cs_use_this");
             Object.assign(useBtn.style, {
               background: accent, color: "#fff", border: "none",
               borderRadius: "6px", padding: "4px 10px",
@@ -1141,7 +1189,7 @@
           color: "#64748b", marginBottom: "6px",
           textTransform: "uppercase", letterSpacing: "0.06em",
         });
-        editLbl.textContent = "Your message — edit to improve tone";
+        editLbl.textContent = __("cs_edit_tone");
         const ta = document.createElement("textarea");
         ta.value = suggestions[0] || originalPrompt;
         Object.assign(ta.style, {
@@ -1188,7 +1236,7 @@
         function toggleEdit2() {
           editOpen = !editOpen;
           editWrap.style.display = editOpen ? "block" : "none";
-          editManualBtn.textContent = editOpen ? "Hide editor" : "Edit manually";
+          editManualBtn.textContent = editOpen ? __("cs_btn_hide_editor") : __("cs_edit_manually");
           sendEditedBtn.style.display = editOpen ? "" : "none";
           if (editOpen) setTimeout(() => ta.focus(), 40);
         }
@@ -1198,11 +1246,11 @@
           setTimeout(() => { promptModalOpen = false; panel.remove(); resolve(value); }, 180);
         }
 
-        const editManualBtn = mkBtn2("Edit manually", "ghost");
-        const sendEditedBtn = mkBtn2("Send edited", "primary");
+        const editManualBtn = mkBtn2(__("cs_edit_manually"), "ghost");
+        const sendEditedBtn = mkBtn2(__("cs_send_edited"), "primary");
         sendEditedBtn.style.display = "none";
-        const sendOriginalBtn = mkBtn2("Send original", "ghost-danger");
-        const cancelBtn = mkBtn2("Cancel", "ghost");
+        const sendOriginalBtn = mkBtn2(__("cs_send_original"), "ghost-danger");
+        const cancelBtn = mkBtn2(__("cs_btn_cancel"), "ghost");
 
         editManualBtn.addEventListener("click", toggleEdit2);
         sendEditedBtn.addEventListener("click", () => cleanupAndResolve({ status: "manual", prompt: ta.value }));
@@ -1221,11 +1269,12 @@
         actRow.append(editManualBtn, sendEditedBtn, sendOriginalBtn, cancelBtn);
         body.appendChild(actRow);
         panel.append(header, body);
+        document.querySelectorAll('[data-confidential-agent-modal="true"]').forEach((n) => n.remove());
         document.body.appendChild(panel);
 
       } catch (error) {
         promptModalOpen = false;
-        resolve({ status: "fallback", prompt: originalPrompt, error: error instanceof Error ? error.message : "Unknown error" });
+        resolve({ status: "fallback", prompt: originalPrompt, error: error instanceof Error ? error.message : __("cs_rephrase_err") });
       }
     });
   }
@@ -1553,14 +1602,14 @@
       logoWrap.style.fontSize = "18px";
       const titleWrap = document.createElement("div");
       const titleEl = Object.assign(document.createElement("div"), {
-        textContent: isBlock ? "Image blocked" : "Sensitive image detected",
+        textContent: isBlock ? __("cs_img_block_title") : __("cs_img_warn_title"),
       });
       Object.assign(titleEl.style, {
         fontWeight: "700", fontSize: "15px",
         color: isBlock ? "#991b1b" : "#92400e",
       });
       const subtitleEl = Object.assign(document.createElement("div"), {
-        textContent: "Confidential Agent",
+        textContent: __("cs_brand_subtitle"),
       });
       Object.assign(subtitleEl.style, {
         fontSize: "11px", color: "#94a3b8", marginTop: "1px",
@@ -1589,7 +1638,7 @@
         });
         const fileInfo = document.createElement("div");
         const fileNameEl = Object.assign(document.createElement("div"), {
-          textContent: fileName || "image",
+          textContent: fileName || __("cs_img_filename"),
         });
         Object.assign(fileNameEl.style, {
           fontWeight: "600", fontSize: "13px", color: "#1e293b",
@@ -1598,8 +1647,8 @@
         });
         const statusEl = Object.assign(document.createElement("div"), {
           textContent: isBlock
-            ? "Upload prevented — content policy violation"
-            : "Potentially violates content policy",
+            ? __("cs_img_status_block")
+            : __("cs_img_status_warn"),
         });
         Object.assign(statusEl.style, {
           fontSize: "12px", color: "#64748b", marginTop: "4px", lineHeight: "1.4",
@@ -1611,7 +1660,7 @@
 
       // Detection pills
       const pillsLabel = Object.assign(document.createElement("div"), {
-        textContent: "Detected content",
+        textContent: __("cs_detected_content"),
       });
       Object.assign(pillsLabel.style, {
         fontSize: "10px", fontWeight: "700", color: "#64748b",
@@ -1658,8 +1707,8 @@
       // Description
       const desc = Object.assign(document.createElement("div"), {
         textContent: isBlock
-          ? "This image cannot be uploaded. It contains content that violates safety policies."
-          : "This image may contain sensitive content. Uploading could violate platform policies.",
+          ? __("cs_img_desc_block")
+          : __("cs_img_desc_warn"),
       });
       Object.assign(desc.style, {
         fontSize: "13px", color: "#475569", lineHeight: "1.5",
@@ -1705,12 +1754,12 @@
       };
 
       if (isBlock) {
-        const okBtn = mkBtn("Remove image", "block");
+        const okBtn = mkBtn(__("cs_remove_image"), "block");
         okBtn.addEventListener("click", () => cleanup(false));
         btnRow.appendChild(okBtn);
       } else {
-        const cancelBtn = mkBtn("Cancel", "ghost");
-        const proceedBtn = mkBtn("Send anyway ⚠️", "warn");
+        const cancelBtn = mkBtn(__("cs_btn_cancel"), "ghost");
+        const proceedBtn = mkBtn(__("cs_send_anyway"), "warn");
         cancelBtn.addEventListener("click", () => cleanup(false));
         proceedBtn.addEventListener("click", () => cleanup(true));
         btnRow.append(cancelBtn, proceedBtn);
@@ -1767,7 +1816,7 @@
     }
 
     const toastId = `img-analyzing-${Date.now()}`;
-    showToast(`Analyzing image…`, "info");
+    showToast(__("cs_analyzing_image"), "info");
 
     const result = await safeSendMessage({
       type: "ANALYZE_IMAGE",
@@ -1864,7 +1913,7 @@
             URL.revokeObjectURL(previewObjectUrl);
             continue;
           }
-          showToast("Analyzing pasted image…", "info");
+          showToast(__("cs_analyzing_paste"), "info");
           const result = await safeSendMessage({
             type: "ANALYZE_IMAGE",
             payload: {
@@ -1946,7 +1995,7 @@
       event.preventDefault();
       event.stopPropagation();
       showBlockedImageBanner(); // ensure banner is visible
-      showToast("🚫 Remove the blocked image before posting.", "warning");
+      showToast(__("cs_remove_blocked"), "warning");
       return;
     }
 
@@ -1955,8 +2004,8 @@
     event.stopPropagation();
 
     const el = getPromptElement(event);
-    const prompt = readPromptValue(el).trim();
-    if (!prompt) {
+    const prompt = readPromptValue(el);
+    if (!prompt.trim()) {
       await reportSiteSignal("PROMPT_ELEMENT_NOT_FOUND", "Submit intercepted but no prompt element detected.");
       replaySubmission(el);
       return;
@@ -2020,13 +2069,13 @@
       if (bestRedacted && bestRedacted !== prompt) {
         writePromptValue(el, bestRedacted);
         const actionLabel = {
-          BLOCK:     "Critical data redacted",
-          WARN:      "Sensitive content removed",
-          ANONYMIZE: "Personal data anonymized",
-        }[decision.action] || "Data anonymized";
-        showToast(`${actionLabel} — prompt sent automatically.`, "success");
+          BLOCK:     __("cs_auto_block"),
+          WARN:      __("cs_auto_warn"),
+          ANONYMIZE: __("cs_auto_anon"),
+        }[decision.action] || __("cs_auto_generic");
+        showToast(__("cs_auto_sent", { label: actionLabel }), "success");
         setTimeout(() => {
-          manualWarnBypassHash = hashString(bestRedacted.trim());
+          manualWarnBypassHash = hashString(bestRedacted);
           scheduleReplaySubmission(el);
         }, 600);
       return;
@@ -2034,7 +2083,7 @@
       // Semantic-only detection — no exact value to replace (e.g. LLM flagged
       // a combination of fields with no precise match).
       // Fall through to the review panel so the user can edit manually.
-      showToast("Could not auto-redact — please review and edit manually.", "warning");
+      showToast(__("cs_auto_fail"), "warning");
     }
 
     // ── Manual mode (or unreductable semantic content): show the review panel ─
@@ -2051,22 +2100,22 @@
       });
 
       if (!rephrase || rephrase.status === "cancel") {
-        showUserAlert("Message not sent. You can edit and retry.");
+        showUserAlert(__("cs_msg_not_sent"));
         return;
       }
       if (rephrase.status === "original") {
         // User explicitly chose to send the original — bypass toxicity check once.
         manualWarnBypassHash = hashString(prompt);
-        showToast("Sending original message.", "info");
+        showToast(__("cs_sending_original"), "info");
         replaySubmission(el);
         return;
       }
       if (rephrase.status === "auto" || rephrase.status === "manual") {
-        const chosenText = String(rephrase.prompt || "").trim();
-        if (!chosenText) { showUserAlert("Message is empty. Please edit and retry."); return; }
+        const chosenText = String(rephrase.prompt || "");
+        if (!chosenText.trim()) { showUserAlert(__("cs_msg_empty")); return; }
         writePromptValue(el, chosenText);
         manualWarnBypassHash = hashString(chosenText);
-        showToast("Message updated — click Send to submit.", "success");
+        showToast(__("cs_msg_updated"), "success");
         return;
       }
       // Fallback: allow original
@@ -2088,26 +2137,26 @@
       if (review?.status === "fallback") {
         console.warn("Confidential Agent modal fallback:", review.error);
         const useAuto = await showQuickConfirm(
-          "Review panel could not be rendered. Apply auto-filter and continue?"
+          __("cs_fallback_confirm")
         );
         if (useAuto) {
           writePromptValue(el, bestRedacted);
-          showToast("Prompt auto-filtered. Review it, then click Send.", "success");
+          showToast(__("cs_prompt_auto_filtered"), "success");
           return;
         }
-        showToast("Prompt not sent. You can edit and retry.", "info");
+        showToast(__("cs_prompt_not_sent"), "info");
         return;
       }
 
       if (!review || review.status === "cancel") {
-        showUserAlert("Prompt not sent. You can edit and retry.");
+        showUserAlert(__("cs_prompt_not_sent_alt"));
         return;
       }
 
       if (review.status === "manual") {
-        const manualPrompt = String(review.prompt || "").trim();
-        if (!manualPrompt) {
-          showUserAlert("Prompt is empty. Please edit and retry.");
+        const manualPrompt = String(review.prompt || "");
+        if (!manualPrompt.trim()) {
+          showUserAlert(__("cs_manual_empty"));
           return;
         }
         if (manualPrompt === prompt) {
@@ -2115,7 +2164,7 @@
           // matches the original, no redaction was possible — ask the user to edit.
           if (hasRedactedPlaceholders(manualPrompt)) {
             const continueSend = await showQuickConfirm(
-              "This prompt already contains redacted placeholders. Send it now?"
+              __("cs_confirm_placeholders")
             );
             if (continueSend) {
               manualWarnBypassHash = hashString(manualPrompt);
@@ -2124,15 +2173,15 @@
             }
           }
           showUserAlert(
-            "Sensitive data could not be automatically redacted. Please edit the prompt manually to remove the flagged content."
+            __("cs_could_not_redact")
           );
           return;
         }
-        if (decision.action === "WARN") {
-          manualWarnBypassHash = hashString(manualPrompt);
-        }
+        // After any successful manual edit, the next Send must skip re-analysis for this exact text
+        // (BLOCK / ANONYMIZE previously only set bypass for WARN, which caused a repeat modal).
+        manualWarnBypassHash = hashString(manualPrompt);
         writePromptValue(el, manualPrompt);
-        showUserAlert("Your edited prompt is ready. Click Send when ready.");
+        showUserAlert(__("cs_edited_ready"));
         return;
       }
 
@@ -2140,7 +2189,7 @@
         if (review.prompt === prompt) {
           if (decision.action !== "BLOCK" && hasRedactedPlaceholders(prompt)) {
             const continueSend = await showQuickConfirm(
-              "No further redaction needed — this prompt already contains placeholders. Send now?"
+              __("cs_confirm_placeholders_ok")
             );
             if (continueSend) {
               manualWarnBypassHash = hashString(prompt);
@@ -2149,17 +2198,17 @@
             }
           }
           showUserAlert(
-            "No automatic redaction could be applied for this content. Please edit manually."
+            __("cs_no_auto_redact")
           );
           return;
         }
         writePromptValue(el, review.prompt);
         if (decision.action !== "BLOCK") {
-          manualWarnBypassHash = hashString(String(review.prompt || "").trim());
+          manualWarnBypassHash = hashString(String(review.prompt || ""));
           scheduleReplaySubmission(el);
           return;
         }
-        showUserAlert("Prompt auto-filtered. Review it, then click Send.");
+        showUserAlert(__("cs_auto_filtered_review"));
       }
       return;
     }
@@ -2192,7 +2241,7 @@
 
     // Show a brief scanning indicator so the user knows AVS is active.
     // Use a unique toast ID so multiple concurrent scans collapse into one.
-    showToast("🔍 Scanning AI response…", "info");
+    showToast(__("cs_scanning"), "info");
 
     const payload = {
       requestId: `resp-${Date.now()}-${hash}`,
@@ -2219,7 +2268,7 @@
     const decision = result.data;
     if (decision.action === "ALLOW") {
       // Response is clean — show a brief reassuring confirmation.
-      showToast("✅ Response scanned — no sensitive content.", "success");
+      showToast(__("cs_response_clean"), "success");
       return;
     }
 
@@ -2230,7 +2279,7 @@
       if (surgicalOk) {
         insertResponseNotice(node, {
           icon: "🛡",
-          message: "Sensitive content has been blurred in this response.",
+          message: __("cs_response_blurred"),
           color: "#7f1d1d",
           bgColor: "#fef2f2",
           borderColor: "#fca5a5",
@@ -2245,7 +2294,7 @@
         if (localOk) {
           insertResponseNotice(node, {
             icon: "🛡",
-            message: "Sensitive content has been blurred in this response.",
+            message: __("cs_response_blurred"),
             color: "#7f1d1d",
             bgColor: "#fef2f2",
             borderColor: "#fca5a5",
@@ -2255,7 +2304,7 @@
           // do NOT hide the full response. The user can judge the content.
           insertResponseNotice(node, {
             icon: "⚠️",
-            message: "Confidential Agent flagged this response as potentially sensitive. Review carefully before using.",
+            message: __("cs_response_flagged"),
             color: "#7c2d12",
             bgColor: "#fff7ed",
             borderColor: "#fed7aa",
@@ -2271,7 +2320,7 @@
       if (!surgicalOk) {
         redactResponseNode(node); // local regex fallback
       }
-      showToast("Sensitive data anonymized in response.", "warning");
+      showToast(__("cs_response_anon"), "warning");
       return;
     }
 
@@ -2280,10 +2329,10 @@
       redactResponseNodeSurgically(node, decision.redactions, "WARN");
       showResponseWarningBanner(
         node,
-        "This AI response may contain sensitive data.",
+        __("cs_response_warn"),
         (keepVisible) => {
           if (!keepVisible) {
-            maskResponseNode(node, "Response hidden by Confidential Agent.");
+            maskResponseNode(node, __("cs_mask_hidden"));
           }
         }
       );
@@ -2299,11 +2348,11 @@
         .map((d) => d.valuePreview)
         .join(", ");
       const bannerMsg = toxicDetections
-        ? `This AI response contains potentially offensive language (${toxicDetections}). Review before using.`
-        : "This AI response contains potentially offensive or aggressive language. Review before using.";
+        ? __("cs_toxic_with_samples", { samples: toxicDetections })
+        : __("cs_toxic_generic");
       showResponseWarningBanner(node, bannerMsg, (keepVisible) => {
         if (!keepVisible) {
-          maskResponseNode(node, "Response hidden — potentially offensive content.");
+          maskResponseNode(node, __("cs_mask_offensive"));
         }
       });
       insertResponseNotice(node, {

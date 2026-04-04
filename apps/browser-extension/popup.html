@@ -1,8 +1,8 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Confidential Agent</title>
+    <title data-i18n-title="opt_brand">Confidential Agent</title>
     <link rel="stylesheet" href="tailwind.output.css" />
     <style>
       @keyframes orb-pulse {
@@ -21,10 +21,10 @@
         <img src="icons/icon-128.png" alt="" width="32" height="32" class="w-full h-full object-contain" />
       </div>
       <div class="flex-1 min-w-0">
-        <div class="text-[12.5px] font-bold tracking-tight">Confidential Agent</div>
-        <div class="text-[9px] text-slate-500 uppercase tracking-wider mt-0.5 font-semibold">AI Privacy Guardrail</div>
+        <div class="text-[12.5px] font-bold tracking-tight" data-i18n="opt_brand">Confidential Agent</div>
+        <div class="text-[9px] text-slate-500 uppercase tracking-wider mt-0.5 font-semibold" data-i18n="pop_subtitle">AI Privacy Guardrail</div>
       </div>
-      <label class="relative w-8 h-[18px] cursor-pointer shrink-0" title="Enable / disable guardrail">
+      <label class="relative w-8 h-[18px] cursor-pointer shrink-0" data-i18n-title="pop_toggle_title">
         <input type="checkbox" id="quickToggle" checked class="sr-only peer" />
         <span class="absolute inset-0 bg-slate-700 rounded-full transition-colors duration-200 peer-checked:bg-indigo-600"></span>
         <span class="absolute top-[3px] left-[3px] w-3 h-3 bg-slate-400 rounded-full shadow transition-all duration-200 peer-checked:translate-x-[14px] peer-checked:bg-white"></span>
@@ -32,7 +32,7 @@
     </div>
 
     <!-- Paused banner -->
-    <div id="disabledBanner" class="hidden mx-3.5 mt-2 px-3 py-2 bg-amber-500/15 border border-amber-500/30 rounded-lg text-[11px] text-amber-400 font-medium text-center">
+    <div id="disabledBanner" class="hidden mx-3.5 mt-2 px-3 py-2 bg-amber-500/15 border border-amber-500/30 rounded-lg text-[11px] text-amber-400 font-medium text-center" data-i18n="pop_paused">
       Guardrail paused — prompts unprotected
     </div>
 
@@ -48,15 +48,15 @@
         <div id="orbRing" class="hidden absolute inset-[-3px] rounded-full border-[1.5px] border-emerald-500 animate-orb-pulse"></div>
       </div>
       <div class="flex-1 min-w-0">
-        <div id="statusLabel" class="text-[13px] font-bold text-indigo-400">Connecting…</div>
-        <div id="statusSub" class="text-[10.5px] text-slate-500 mt-0.5 truncate">Checking API endpoint</div>
+        <div id="statusLabel" class="text-[13px] font-bold text-indigo-400">…</div>
+        <div id="statusSub" class="text-[10.5px] text-slate-500 mt-0.5 truncate">…</div>
       </div>
     </div>
 
     <!-- Platform row -->
     <div class="flex items-center gap-2 px-3.5 py-2.5 bg-slate-800/40 border-b border-slate-800">
       <div id="platformDot" class="w-[7px] h-[7px] rounded-full bg-slate-600 shrink-0 transition-all duration-300"></div>
-      <span id="platformName" class="flex-1 text-[12px] font-semibold truncate">No AI platform detected</span>
+      <span id="platformName" class="flex-1 text-[12px] font-semibold truncate" data-i18n="pop_no_platform">No AI platform detected</span>
       <span id="platformBadge" class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-700 text-slate-500 shrink-0 transition-all duration-300">—</span>
     </div>
 
@@ -64,11 +64,11 @@
     <div class="grid grid-cols-2 border-b border-slate-800">
       <div class="px-3.5 py-3 bg-slate-800/30 border-r border-slate-800">
         <div id="statAnalyzed" class="text-[22px] font-extrabold tracking-tight leading-none">—</div>
-        <div class="text-[9px] text-slate-500 uppercase tracking-widest mt-1 font-semibold">Analyzed</div>
+        <div class="text-[9px] text-slate-500 uppercase tracking-widest mt-1 font-semibold" data-i18n="pop_stat_analyzed">Analyzed</div>
       </div>
       <div class="px-3.5 py-3 bg-slate-800/30">
         <div id="statBlocked" class="text-[22px] font-extrabold tracking-tight leading-none text-red-400">—</div>
-        <div class="text-[9px] text-slate-500 uppercase tracking-widest mt-1 font-semibold">Blocked</div>
+        <div class="text-[9px] text-slate-500 uppercase tracking-widest mt-1 font-semibold" data-i18n="pop_stat_blocked">Blocked</div>
       </div>
     </div>
 
@@ -79,11 +79,12 @@
           <circle cx="12" cy="12" r="3"/>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
         </svg>
-        Settings
+        <span data-i18n="pop_settings">Settings</span>
       </a>
       <span class="text-[9px] text-slate-700 font-medium tracking-wide">v0.1.0</span>
     </div>
 
+    <script src="src/i18n.js"></script>
     <script src="src/siteConfigs.js"></script>
     <script src="src/popup.js"></script>
   </body>

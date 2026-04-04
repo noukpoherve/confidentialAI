@@ -363,31 +363,102 @@
     return el.textContent || "";
   }
 
+  /**
+   * React / Lexical composers keep canonical state in JS — assigning .value or
+   * .textContent alone often does not update what gets submitted.
+   */
+  function setNativeFormValue(el, str) {
+    if (!(el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement)) return;
+    const proto =
+      el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const desc = Object.getOwnPropertyDescriptor(proto, "value");
+    if (desc && desc.set) {
+      desc.set.call(el, str);
+    } else {
+      el.value = str;
+    }
+    try {
+      const tracker = el._valueTracker;
+      if (tracker && typeof tracker.setValue === "function") {
+        tracker.setValue("");
+      }
+    } catch (_) {}
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function setContentEditableValue(el, str) {
+    el.focus();
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection();
+      if (sel) {
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    } catch (_) {}
+    let inserted = false;
+    try {
+      inserted = document.execCommand("insertText", false, str);
+    } catch (_) {}
+    const got = (el.innerText || el.textContent || "").replace(/\r\n/g, "\n");
+    const want = String(str).replace(/\r\n/g, "\n");
+    if (!inserted || got !== want) {
+      el.textContent = str;
+      el.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          cancelable: true,
+          inputType: "insertReplacementText",
+          data: str,
+        })
+      );
+    }
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
   function writePromptValue(el, value) {
     if (!el) return;
+    const str = value == null ? "" : String(value);
+
     if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
-      el.value = value;
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
+      setNativeFormValue(el, str);
       return;
     }
+    try {
+      if (
+        el instanceof HTMLElement &&
+        !(el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) &&
+        "value" in el &&
+        typeof el.value === "string"
+      ) {
+        el.value = str;
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        return;
+      }
+    } catch (_) {}
     const sr = el.shadowRoot;
     if (sr) {
       const ta = sr.querySelector("textarea");
       if (ta instanceof HTMLTextAreaElement) {
-        ta.value = value;
-        ta.dispatchEvent(new Event("input", { bubbles: true }));
+        setNativeFormValue(ta, str);
         el.dispatchEvent(new Event("input", { bubbles: true }));
         return;
       }
       const ce = sr.querySelector('[contenteditable="true"]');
       if (ce instanceof HTMLElement) {
-        ce.textContent = value;
-        ce.dispatchEvent(new Event("input", { bubbles: true }));
+        setContentEditableValue(ce, str);
         return;
       }
     }
-    el.textContent = value;
+    if (el.getAttribute?.("contenteditable") === "true") {
+      setContentEditableValue(el, str);
+      return;
+    }
+    el.textContent = str;
     el.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
@@ -1821,8 +1892,11 @@
     );
   }
 
-  function replaySubmission() {
-    const promptElement = getPromptElement(null);
+  function replaySubmission(promptElementHint) {
+    const promptElement =
+      promptElementHint && promptElementHint instanceof HTMLElement && promptElementHint.isConnected
+        ? promptElementHint
+        : getPromptElement(null);
     const promptForm = promptElement instanceof HTMLElement ? promptElement.closest("form") : null;
     if (promptForm && typeof promptForm.requestSubmit === "function") {
       replayingSubmission = true;
@@ -1851,6 +1925,14 @@
     }, 0);
   }
 
+  function scheduleReplaySubmission(promptElementHint) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setTimeout(() => replaySubmission(promptElementHint), 0);
+      });
+    });
+  }
+
   async function analyzeAndMaybeBlock(event) {
     const cfg = getActiveSiteConfig();
     if (!cfg) return;
@@ -1876,14 +1958,14 @@
     const prompt = readPromptValue(el).trim();
     if (!prompt) {
       await reportSiteSignal("PROMPT_ELEMENT_NOT_FOUND", "Submit intercepted but no prompt element detected.");
-      replaySubmission();
+      replaySubmission(el);
       return;
     }
 
     const promptHash = hashString(prompt);
     if (manualWarnBypassHash && manualWarnBypassHash === promptHash) {
       manualWarnBypassHash = null;
-      replaySubmission();
+      replaySubmission(el);
       return;
     }
 
@@ -1912,13 +1994,13 @@
       // Enterprise deployments may require a fail-close policy.
       console.warn("Confidential Agent API unavailable:", result?.error);
       await reportSiteSignal("API_UNREACHABLE", String(result?.error || ""));
-      replaySubmission();
+      replaySubmission(el);
       return;
     }
 
     const decision = result.data;
     if (decision.action === "ALLOW") {
-      replaySubmission();
+      replaySubmission(el);
       return;
     }
 
@@ -1945,7 +2027,7 @@
         showToast(`${actionLabel} — prompt sent automatically.`, "success");
         setTimeout(() => {
           manualWarnBypassHash = hashString(bestRedacted.trim());
-          replaySubmission();
+          scheduleReplaySubmission(el);
         }, 600);
       return;
       }
@@ -1976,7 +2058,7 @@
         // User explicitly chose to send the original — bypass toxicity check once.
         manualWarnBypassHash = hashString(prompt);
         showToast("Sending original message.", "info");
-        replaySubmission();
+        replaySubmission(el);
         return;
       }
       if (rephrase.status === "auto" || rephrase.status === "manual") {
@@ -1989,7 +2071,7 @@
       }
       // Fallback: allow original
       manualWarnBypassHash = hashString(prompt);
-      replaySubmission();
+      replaySubmission(el);
       return;
     }
 
@@ -2037,7 +2119,7 @@
             );
             if (continueSend) {
               manualWarnBypassHash = hashString(manualPrompt);
-              replaySubmission();
+              scheduleReplaySubmission(el);
               return;
             }
           }
@@ -2046,8 +2128,7 @@
           );
           return;
         }
-    if (decision.action === "WARN") {
-          // Allow one explicit retry after user manual review to avoid UX loops on medium risk.
+        if (decision.action === "WARN") {
           manualWarnBypassHash = hashString(manualPrompt);
         }
         writePromptValue(el, manualPrompt);
@@ -2063,9 +2144,9 @@
             );
             if (continueSend) {
               manualWarnBypassHash = hashString(prompt);
-              replaySubmission();
-        return;
-      }
+              scheduleReplaySubmission(el);
+              return;
+            }
           }
           showUserAlert(
             "No automatic redaction could be applied for this content. Please edit manually."
@@ -2075,7 +2156,7 @@
         writePromptValue(el, review.prompt);
         if (decision.action !== "BLOCK") {
           manualWarnBypassHash = hashString(String(review.prompt || "").trim());
-          replaySubmission();
+          scheduleReplaySubmission(el);
           return;
         }
         showUserAlert("Prompt auto-filtered. Review it, then click Send.");

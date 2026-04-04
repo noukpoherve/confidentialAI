@@ -100,6 +100,23 @@ def test_swift_bic_rejects_invalid_country_suffix():
     assert "SWIFT_BIC" not in [h.hit_type for h in hits]
 
 
+def test_swift_bic_not_french_certains():
+    """'certains' uppercases to CERTAINS which structurally matches SWIFT — must not flag."""
+    hits = detect_sensitive_content(
+        "J'ai des problèmes dans certains cas spécifiques avec mon extension."
+    )
+    assert "SWIFT_BIC" not in [h.hit_type for h in hits]
+
+
+def test_swift_bic_suppressed_in_python_env_context():
+    """Identifiers near os.getenv / API_KEY patterns must not be flagged as SWIFT."""
+    snippet = (
+        '_llm_api_key = os.getenv("LLM_CLASSIFIER_API_KEY", os.getenv("OPENAI_API_KEY", ""))'
+    )
+    hits = detect_sensitive_content(snippet)
+    assert "SWIFT_BIC" not in [h.hit_type for h in hits]
+
+
 def test_legal_hr_phrases_detected():
     hits = detect_sensitive_content(
         "Suite à un arrêt maladie, le médecin du travail propose un aménagement de poste."

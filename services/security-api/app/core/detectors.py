@@ -148,6 +148,49 @@ def _is_plausible_swift_bic(token_upper: str) -> bool:
     return True
 
 
+# 8-letter words that accidentally match the SWIFT shape (4+2+2), e.g. CERT+AI+NS.
+# Plain prose has no CODE_CONTEXT_SIGNALS nearby — still suppress these tokens.
+_SWIFT_8_FALSE_POSITIVE_WORDS = frozenset(
+    {
+        "CERTAINS",
+        "CERTAINE",
+    }
+)
+
+CODE_CONTEXT_SIGNALS = [
+    r"os\.getenv",
+    r"import\s+",
+    r"def\s+\w+",
+    r"class\s+\w+",
+    r"=\s*[\"']",
+    r"http[s]?://",
+    r"\w+\.\w+\(",
+    r"```",
+    r"#\s+",
+    r"pip\s+install",
+    r"npm\s+",
+    r"<[a-zA-Z]+>",
+]
+
+_CODE_CONTEXT_COMPILED = [
+    re.compile(p, re.IGNORECASE | re.MULTILINE) for p in CODE_CONTEXT_SIGNALS
+]
+
+
+def is_code_context(text: str, match_start: int, match_end: int, window: int = 150) -> bool:
+    """
+    True if the match sits in a code / technical context (fuzzy window).
+    Fail-open: on any error, returns False so we do not drop a potential true positive.
+    """
+    try:
+        lo = max(0, match_start - window)
+        hi = min(len(text), match_end + window)
+        chunk = text[lo:hi]
+        return any(p.search(chunk) for p in _CODE_CONTEXT_COMPILED)
+    except Exception:
+        return False
+
+
 REDACTED_PLACEHOLDER_PATTERN = re.compile(r"\[REDACTED_[A-Z_]+\]")
 
 
@@ -191,6 +234,10 @@ def detect_sensitive_content(prompt: str) -> list[DetectorHit]:
         if not _is_plausible_swift_bic(token_upper):
             continue
         s, e = match.span()
+        if len(token_upper) == 8 and token_upper in _SWIFT_8_FALSE_POSITIVE_WORDS:
+            continue
+        if is_code_context(prompt, s, e):
+            continue
         hits.append(
             DetectorHit(
                 hit_type="SWIFT_BIC",

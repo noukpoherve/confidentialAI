@@ -7,6 +7,8 @@ class UserPlatformEntry(BaseModel):
     id: str
     label: str
     domain: str
+    # If set, only this path prefix on the host is protected (leading slash, no trailing slash).
+    pathPrefix: str | None = None
     # "textAnalysis" | "imageModeration"
     features: list[str] = Field(default_factory=lambda: ["textAnalysis", "imageModeration"])
 
@@ -21,6 +23,8 @@ class UserSettingsPayload(BaseModel):
     customDomains: list[str] = Field(default_factory=list)
     # User-managed platforms: each entry has domain, label and per-platform features.
     userAddedPlatforms: list[UserPlatformEntry] = Field(default_factory=list)
+    # URLs whose appearance in prompts should be flagged (see build_url_protection_patterns).
+    protected_urls: list[str] = Field(default_factory=list)
 
 
 class UserSettingsResponse(UserSettingsPayload):

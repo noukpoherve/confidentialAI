@@ -3,7 +3,20 @@ from __future__ import annotations
 import logging
 from functools import lru_cache
 
-from app.core.policy_engine import PolicyDecision, analyze_prompt
+from app.core.detectors import (
+    DetectorHit,
+    build_redactions,
+    build_url_protection_patterns,
+    detect_sensitive_content,
+)
+from app.core.policy_engine import (
+    PolicyDecision,
+    _build_detections,
+    _decide_action,
+    _score_hits,
+    analyze_prompt,
+)
+from app.core.user_store import get_user_store
 
 logger = logging.getLogger(__name__)
 
@@ -232,13 +245,51 @@ def _apply_spacy_ner(decision: PolicyDecision, prompt: str) -> PolicyDecision:
     return decision
 
 
-def run_afe(prompt: str, user_consent: bool | None) -> PolicyDecision:
+def run_afe(prompt: str, user_consent: bool | None, user_id: str | None = None) -> PolicyDecision:
     """
     AFE (Input Filtering Agent) for prompt-level risk analysis.
     Delegates to deterministic policy logic, then enriches with spaCy NER for
     entities not matched by regex (fail-open if NER unavailable).
+    When user_id is set, user-configured protected URLs are matched in the prompt.
     """
     decision = analyze_prompt(prompt=prompt, user_consent=user_consent)
+
+    url_hits: list[DetectorHit] = []
+    if user_id:
+        try:
+            user_settings = get_user_store().get_user_settings(user_id)
+            protected_urls = list(user_settings.get("protected_urls") or [])
+            for label, compiled in build_url_protection_patterns(protected_urls):
+                for m in compiled.finditer(prompt):
+                    url_hits.append(
+                        DetectorHit(
+                            hit_type=label,
+                            raw_value=m.group(0),
+                            confidence=0.9,
+                            span_start=m.start(),
+                            span_end=m.end(),
+                        )
+                    )
+        except Exception:
+            logger.exception("Protected URL scan failed")
+
+    if url_hits:
+        base_hits = detect_sensitive_content(prompt)
+        all_hits = base_hits + url_hits
+        hit_types_list = [h.hit_type for h in all_hits]
+        risk_score = _score_hits(hit_types_list)
+        action, reasons = _decide_action(risk_score, set(hit_types_list), user_consent)
+        redactions = build_redactions(all_hits) if action in {"ANONYMIZE", "WARN", "BLOCK"} else []
+        decision = PolicyDecision(
+            action=action,
+            risk_score=risk_score,
+            reasons=reasons,
+            detections=_build_detections(all_hits),
+            redactions=redactions,
+            created_at=decision.created_at,
+            suggestions=decision.suggestions,
+        )
+
     try:
         return _apply_spacy_ner(decision, prompt)
     except Exception:

@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { Dictionary } from "../../lib/i18n";
 import { ExtensionDownloadGrid } from "./ExtensionDownloadGrid";
+import { GetExtensionCtaButton } from "./GetExtensionCtaButton";
 
 const IMG = {
   hero: "https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1400&q=82",
@@ -114,13 +115,13 @@ export function LandingExperience({
             {p.heroLead.trim() ? (
               <p className="mt-4 max-w-xl text-base leading-relaxed text-ink-muted">{p.heroLead}</p>
             ) : null}
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Link
-                href={`${prefix}/download`}
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <GetExtensionCtaButton
+                locale={locale}
                 className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-accent to-[#7c7cff] px-8 py-3.5 text-sm font-semibold text-white shadow-lg shadow-accent/30 transition hover:-translate-y-px hover:shadow-xl hover:shadow-accent/40"
               >
                 {p.heroCtaPrimary}
-              </Link>
+              </GetExtensionCtaButton>
               <Link
                 href={`${prefix}/pricing`}
                 className="inline-flex items-center justify-center rounded-full border border-line bg-canvas px-8 py-3.5 text-sm font-semibold text-ink shadow-sm transition hover:border-ink/20 hover:bg-surface hover:shadow-md"
@@ -285,12 +286,12 @@ export function LandingExperience({
             ))}
           </div>
           <div className="mt-12">
-            <Link
-              href={`${prefix}/download`}
+            <GetExtensionCtaButton
+              locale={locale}
               className="inline-flex rounded-full bg-gradient-to-r from-accent to-[#7c7cff] px-8 py-3.5 text-sm font-semibold text-white shadow-lg shadow-accent/30 transition hover:-translate-y-px hover:shadow-accent/50"
             >
               {p.heroCtaPrimary}
-            </Link>
+            </GetExtensionCtaButton>
           </div>
         </div>
       </section>
@@ -620,7 +621,7 @@ export function LandingExperience({
           <h2 className="font-sans text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{l.installTitle}</h2>
           <p className="mt-2 max-w-2xl text-sm text-ink-muted">{l.installSubtitle}</p>
           <div className="mt-8">
-            <ExtensionDownloadGrid dict={dict} />
+            <ExtensionDownloadGrid dict={dict} locale={locale} />
           </div>
         </div>
       </section>

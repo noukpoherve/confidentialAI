@@ -83,6 +83,11 @@ export function MarketingFooter({
                 </Link>
               </li>
               <li>
+                <Link href={`${prefix}/download`} className={linkCls}>
+                  {n.extensions}
+                </Link>
+              </li>
+              <li>
                 <Link href={`${prefix}/platform`} className={linkCls}>
                   {n.platformMap}
                 </Link>

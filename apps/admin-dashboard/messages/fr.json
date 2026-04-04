@@ -7,6 +7,7 @@
   "nav": {
     "product": "Produit",
     "download": "Téléchargement",
+    "extensions": "Extensions",
     "docs": "Documentation",
     "pricing": "Tarifs",
     "blog": "Blog",
@@ -216,7 +217,7 @@
     "dataQdrant": "Qdrant — vecteurs d’embeddings pour flux sémantiques",
     "dataEmbed": "OpenAI text-embedding-3-small — même politique de clé API",
     "installTitle": "Installer l’extension",
-    "installSubtitle": "Choisissez un navigateur. Utilisez le build développeur jusqu’aux publications magasin.",
+    "installSubtitle": "Chrome et Edge : installez depuis le Chrome Web Store. Autres navigateurs : voir ci-dessous ou le build développeur.",
     "chrome": "Chrome",
     "edge": "Edge",
     "firefox": "Firefox",

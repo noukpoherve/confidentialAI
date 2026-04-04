@@ -15,6 +15,7 @@ from langgraph.graph import END, START, StateGraph
 class PromptGraphState(TypedDict):
     prompt: str
     user_consent: bool | None
+    user_id: NotRequired[str | None]
     decision: NotRequired[PolicyDecision]
     visited: NotRequired[list[str]]
     skip_llm_classifier: NotRequired[bool]
@@ -33,7 +34,11 @@ class AgentExecution:
 
 
 def _prompt_afe_node(state: PromptGraphState) -> PromptGraphState:
-    decision = run_afe(prompt=state["prompt"], user_consent=state["user_consent"])
+    decision = run_afe(
+        prompt=state["prompt"],
+        user_consent=state["user_consent"],
+        user_id=state.get("user_id"),
+    )
     return {"decision": decision, "visited": [*state.get("visited", []), "afe"]}
 
 
@@ -166,7 +171,9 @@ _prompt_graph = _build_prompt_graph()
 _response_graph = _build_response_graph()
 
 
-def analyze_prompt_with_agents(prompt: str, user_consent: bool | None) -> AgentExecution:
+def analyze_prompt_with_agents(
+    prompt: str, user_consent: bool | None, user_id: str | None = None
+) -> AgentExecution:
     """
     Prompt orchestration pipeline:
     1) AFE for initial decision
@@ -174,7 +181,9 @@ def analyze_prompt_with_agents(prompt: str, user_consent: bool | None) -> AgentE
     3) LLM classifier (optional) for dynamic detection
     4) AC for arbitration of ambiguous cases
     """
-    result = _prompt_graph.invoke({"prompt": prompt, "user_consent": user_consent, "visited": []})
+    result = _prompt_graph.invoke(
+        {"prompt": prompt, "user_consent": user_consent, "user_id": user_id, "visited": []}
+    )
     return AgentExecution(decision=result["decision"], graph_trace=result.get("visited", []))
 
 

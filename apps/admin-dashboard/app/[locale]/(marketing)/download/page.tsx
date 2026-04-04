@@ -2,7 +2,8 @@ import { ExtensionDownloadGrid } from "../../../../components/marketing/Extensio
 import { getDictionary } from "../../../../lib/i18n";
 
 export default async function DownloadPage({ params }: { params: Promise<{ locale: string }> }) {
-  const dict = await getDictionary((await params).locale);
+  const { locale } = await params;
+  const dict = await getDictionary(locale);
   const d = dict.download;
 
   return (
@@ -22,7 +23,7 @@ export default async function DownloadPage({ params }: { params: Promise<{ local
 
       {/* Grid */}
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-        <ExtensionDownloadGrid dict={dict} />
+        <ExtensionDownloadGrid dict={dict} locale={locale} />
       </div>
     </div>
   );

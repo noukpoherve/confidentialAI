@@ -429,11 +429,15 @@ function renderUserAddedPlatforms() {
 
     const labelEl = document.createElement("div");
     labelEl.className = "text-[12.5px] font-semibold text-teal-800 truncate";
-    labelEl.textContent = platform.label || platform.domain;
+    labelEl.textContent =
+      platform.label
+      || (platform.pathPrefix ? `${platform.domain}${platform.pathPrefix}` : platform.domain);
 
     const domainEl = document.createElement("div");
     domainEl.className = "text-[11px] text-teal-600 font-mono truncate";
-    domainEl.textContent = platform.domain;
+    domainEl.textContent = platform.pathPrefix
+      ? `${platform.domain}${platform.pathPrefix}`
+      : platform.domain;
 
     info.append(labelEl, domainEl);
 
@@ -483,8 +487,17 @@ function addUserPlatform() {
   }
   if (errorEl) errorEl.classList.add("hidden");
 
-  const domain = rawDomain.replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "").toLowerCase();
-  if (userAddedPlatforms.some((p) => p.domain === domain)) {
+  const Site = globalThis.ConfidentialAgentSiteConfigs;
+  const parsed = Site?.parseUserSiteInput ? Site.parseUserSiteInput(rawDomain) : null;
+  if (!parsed || !parsed.ok) {
+    if (errorEl) { errorEl.textContent = tt("opt_domain_invalid"); errorEl.classList.remove("hidden"); }
+    return;
+  }
+  const { host: domain, pathPrefix, display } = parsed;
+  const dup = userAddedPlatforms.some(
+    (p) => p.domain === domain && (p.pathPrefix || null) === (pathPrefix || null)
+  );
+  if (dup) {
     if (errorEl) { errorEl.textContent = tt("opt_domain_dup"); errorEl.classList.remove("hidden"); }
     return;
   }
@@ -496,8 +509,9 @@ function addUserPlatform() {
 
   const newPlatform = {
     id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-    label: labelInput?.value.trim() || domain,
+    label: labelInput?.value.trim() || display,
     domain,
+    ...(pathPrefix ? { pathPrefix } : {}),
     features,
   };
 

@@ -52,7 +52,11 @@
   async function refreshCurrentSiteConfig() {
     const userSiteSettings = await loadUserSiteSettings();
     currentSiteConfig = siteConfigApi.resolveCurrentSiteConfig(
-      window.location.hostname,
+      {
+        hostname: window.location.hostname,
+        pathname: window.location.pathname,
+        href: window.location.href,
+      },
       userSiteSettings
     );
   }
@@ -218,6 +222,57 @@
     return candidates[0];
   }
 
+  /**
+   * GitHub/GitLab/etc.: comment UI often uses <form> + submit; the focused field may not
+   * be the one tied to the clicked “Comment” button. Resolve textarea/CE from the click path.
+   */
+  function pickBestPromptIn(container) {
+    if (!(container instanceof HTMLElement)) return null;
+    const fields = container.querySelectorAll(
+      "textarea:not([disabled]), [contenteditable='true']"
+    );
+    let best = null;
+    let bestScore = -1;
+    fields.forEach((f) => {
+      if (!(f instanceof HTMLElement) || !isPromptLikeElement(f) || !isVisibleElement(f)) return;
+      const r = f.getBoundingClientRect();
+      const score = Math.max(1, r.width * r.height);
+      if (score > bestScore) {
+        bestScore = score;
+        best = f;
+      }
+    });
+    return best;
+  }
+
+  function getPromptFromClickEvent(event) {
+    if (!event || event.type !== "click") return null;
+    const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+    for (const node of path) {
+      if (!(node instanceof Element)) continue;
+      if (node.closest?.("[data-confidential-agent-modal='true']")) continue;
+
+      const submitLike = node.closest(
+        "button, input[type='submit'], input[type='button'], [role='button']"
+      );
+      if (!submitLike || !(submitLike instanceof HTMLElement)) continue;
+
+      const form = submitLike.closest("form");
+      if (form) {
+        const picked = pickBestPromptIn(form);
+        if (picked) return picked;
+      }
+
+      let scope = submitLike.parentElement;
+      for (let d = 0; d < 14 && scope; d++) {
+        const picked = pickBestPromptIn(scope);
+        if (picked) return picked;
+        scope = scope.parentElement;
+      }
+    }
+    return null;
+  }
+
   function getPromptElement(event) {
     const cfg = getActiveSiteConfig();
     if (!cfg) return null;
@@ -227,6 +282,11 @@
       if (ae instanceof HTMLElement && isPromptLikeElement(ae) && isVisibleElement(ae)) {
         return ae;
       }
+    }
+
+    if (event && event.type === "click") {
+      const fromClick = getPromptFromClickEvent(event);
+      if (fromClick) return fromClick;
     }
 
     if (

@@ -1,9 +1,18 @@
 import type { Dictionary } from "../../lib/i18n";
-import { extensionLinks, type BrowserId } from "../../lib/extension-links";
+import { CHROME_WEB_STORE_URL, extensionLinks, type BrowserId } from "../../lib/extension-links";
 
 const order: BrowserId[] = ["chrome", "edge", "firefox", "safari"];
 
-export function ExtensionDownloadGrid({ dict }: { dict: Dictionary }) {
+function hrefForBrowser(id: BrowserId, locale: string) {
+  const cfg = extensionLinks[id];
+  const prefix = `/${locale}`;
+  if (id === "chrome" || id === "edge") return CHROME_WEB_STORE_URL;
+  if (id === "firefox") return `${prefix}/download#extension-firefox`;
+  if (id === "safari") return `${prefix}/download#extension-safari`;
+  return cfg.href;
+}
+
+export function ExtensionDownloadGrid({ dict, locale }: { dict: Dictionary; locale: string }) {
   const l = dict.landing;
 
   return (
@@ -11,10 +20,12 @@ export function ExtensionDownloadGrid({ dict }: { dict: Dictionary }) {
       {order.map((id) => {
         const cfg = extensionLinks[id];
         const label = l[cfg.labelKey];
+        const href = hrefForBrowser(id, locale);
         return (
           <a
             key={id}
-            href={cfg.href}
+            id={`extension-${id}`}
+            href={href}
             target="_blank"
             rel="noopener noreferrer"
             className="group flex flex-col rounded-2xl border border-line bg-canvas p-5 shadow-sm transition hover:border-accent/35 hover:shadow-md"

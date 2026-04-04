@@ -72,11 +72,15 @@ async function getSettings() {
   };
 }
 
-async function getCurrentTabHostname() {
+async function getCurrentTabPageContext() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.url) return null;
-    return new URL(tab.url).hostname;
+    const u = new URL(tab.url);
+    if (u.protocol === "chrome:" || u.protocol === "chrome-extension:" || u.protocol === "edge:") {
+      return null;
+    }
+    return { hostname: u.hostname, pathname: u.pathname, href: u.href };
   } catch {
     return null;
   }
@@ -123,12 +127,13 @@ function setStatus(state, label, sub) {
   orbIcon.setAttribute("viewBox", "0 0 24 24");
 }
 
-function updatePlatformUI(hostname, guardrailEnabled, syncSnapshot) {
+function updatePlatformUI(pageContext, guardrailEnabled, syncSnapshot) {
   const api = window.ConfidentialAgentSiteConfigs;
   const dotEl   = document.getElementById("platformDot");
   const nameEl  = document.getElementById("platformName");
   const badgeEl = document.getElementById("platformBadge");
 
+  const hostname = pageContext?.hostname;
   if (!api || !hostname || !guardrailEnabled) {
     dotEl.className   = "platform-dot inactive";
     nameEl.textContent = hostname || tt("pop_no_platform");
@@ -137,7 +142,7 @@ function updatePlatformUI(hostname, guardrailEnabled, syncSnapshot) {
     return;
   }
 
-  const cfg = api.resolveCurrentSiteConfig(hostname, {
+  const cfg = api.resolveCurrentSiteConfig(pageContext, {
     guardrailEnabled: true,
     enabledPlatformIds: syncSnapshot?.enabledPlatformIds,
     customDomains: syncSnapshot?.customDomains,
@@ -195,8 +200,8 @@ async function init() {
   document.getElementById("statBlocked").textContent  = stats.blocked  ?? 0;
 
   // Platform detection
-  const hostname = await getCurrentTabHostname();
-  updatePlatformUI(hostname, guardrailEnabled, syncSnapshot);
+  const pageContext = await getCurrentTabPageContext();
+  updatePlatformUI(pageContext, guardrailEnabled, syncSnapshot);
 
   setStatus("checking", tt("pop_status_connecting"), tt("pop_status_checking"));
 
@@ -209,9 +214,9 @@ async function init() {
       applyPopupI18n();
       const { apiBaseUrl: url } = await getSettings();
       await checkApiHealth(url);
-      const hostname2 = await getCurrentTabHostname();
+      const pageCtx2 = await getCurrentTabPageContext();
       const data = await chrome.storage.sync.get(["guardrailEnabled", "enabledPlatformIds", "customDomains", "userAddedPlatforms"]);
-      updatePlatformUI(hostname2, data.guardrailEnabled !== false, {
+      updatePlatformUI(pageCtx2, data.guardrailEnabled !== false, {
         enabledPlatformIds: Array.isArray(data.enabledPlatformIds) ? data.enabledPlatformIds : [],
         customDomains: Array.isArray(data.customDomains) ? data.customDomains : [],
         userAddedPlatforms: Array.isArray(data.userAddedPlatforms) ? data.userAddedPlatforms : [],

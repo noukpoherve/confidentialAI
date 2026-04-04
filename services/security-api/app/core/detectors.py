@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 
 @dataclass
@@ -282,3 +283,38 @@ def build_redactions(hits: list[DetectorHit]) -> list[dict[str, str]]:
             }
         )
     return replacements
+
+
+def build_url_protection_patterns(protected_urls: list[str]) -> list[tuple[str, re.Pattern[str]]]:
+    """
+    Build (label, compiled_regex) pairs from user-configured URLs.
+
+    - Host-only (path empty or "/"): match http(s)://<host>... non-whitespace tail.
+    - With path: exact literal match of the normalized URL string.
+    """
+    result: list[tuple[str, re.Pattern[str]]] = []
+    for raw in protected_urls:
+        s = (raw or "").strip()
+        if not s:
+            continue
+        normalized = s if "://" in s else f"https://{s}"
+        try:
+            parsed = urlparse(normalized)
+        except Exception:
+            continue
+        netloc = (parsed.netloc or "").strip().lower()
+        if not netloc:
+            continue
+        path = parsed.path or ""
+        if path in ("", "/"):
+            host_label = netloc.split(":")[0].replace(".", "_").upper()
+            label = f"URL_{host_label}"
+            pattern = re.compile(
+                r"https?://" + re.escape(netloc) + r"[^\s]*",
+                re.IGNORECASE,
+            )
+        else:
+            label = "URL_CONFIDENTIELLE"
+            pattern = re.compile(re.escape(normalized), re.IGNORECASE)
+        result.append((label, pattern))
+    return result

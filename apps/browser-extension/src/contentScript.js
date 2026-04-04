@@ -226,6 +226,18 @@
    * GitHub/GitLab/etc.: comment UI often uses <form> + submit; the focused field may not
    * be the one tied to the clicked “Comment” button. Resolve textarea/CE from the click path.
    */
+  /**
+   * Tighten the chosen field to the semantic container around P (form / dialog / single-field wrapper).
+   */
+  function refinePromptWithContainer(picked) {
+    const pc = globalThis.ConfidentialAgentPromptContainer;
+    if (!pc || !(picked instanceof HTMLElement)) return picked;
+    const C = pc.findPromptContainer(picked, { maxAncestorSteps: 5 });
+    if (!C) return picked;
+    const refined = pickBestPromptIn(C);
+    return refined || picked;
+  }
+
   function pickBestPromptIn(container) {
     if (!(container instanceof HTMLElement)) return null;
     const fields = container.querySelectorAll(
@@ -260,13 +272,13 @@
       const form = submitLike.closest("form");
       if (form) {
         const picked = pickBestPromptIn(form);
-        if (picked) return picked;
+        if (picked) return refinePromptWithContainer(picked);
       }
 
       let scope = submitLike.parentElement;
       for (let d = 0; d < 14 && scope; d++) {
         const picked = pickBestPromptIn(scope);
-        if (picked) return picked;
+        if (picked) return refinePromptWithContainer(picked);
         scope = scope.parentElement;
       }
     }

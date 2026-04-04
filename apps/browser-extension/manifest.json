@@ -27,7 +27,7 @@
         "https://*/*",
         "http://*/*"
       ],
-      "js": ["src/i18n.js", "src/siteConfigs.js", "src/redactor.js", "src/contentScript.js"],
+      "js": ["src/i18n.js", "src/siteConfigs.js", "src/redactor.js", "src/promptContainer.js", "src/contentScript.js"],
       "run_at": "document_idle",
       "all_frames": true
     }

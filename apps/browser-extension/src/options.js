@@ -68,6 +68,7 @@ const SETTINGS_KEYS = [
   "apiBaseUrl",
   "guardrailEnabled",
   "autoAnonymize",
+  "contentModerationEnabled",
   "imageModerationEnabled",
   "enabledPlatformIds",
   "customDomains",        // legacy
@@ -186,6 +187,55 @@ function updateActiveUrlHint() {
 
 function syncApiUrlUi() {
   updateActiveUrlHint();
+}
+
+function updateContentModerationVisualState() {
+  const enabled = $("contentModerationEnabled")?.checked !== false;
+  const section = $("contentModerationSection");
+  const header = $("contentModerationHeader");
+  const headerIconWrap = $("contentModerationHeaderIconWrap");
+  const headerIcon = $("contentModerationHeaderIcon");
+  const note = $("contentModerationNote");
+  const noteIcon = $("contentModerationNoteIcon");
+  const switchTrack = $("contentModerationSwitchTrack");
+  const switchThumb = $("contentModerationSwitchThumb");
+
+  if (section) {
+    section.classList.toggle("border-cyan-300", enabled);
+    section.classList.toggle("border-slate-200", !enabled);
+  }
+  if (header) {
+    header.classList.toggle("bg-cyan-50", enabled);
+  }
+  if (headerIconWrap) {
+    // headerIconWrap.style.backgroundColor = "transparent";
+    // headerIconWrap.style.boxShadow = "none";
+  }
+  if (headerIcon) {
+    headerIcon.classList.toggle("text-indigo-700", enabled);
+    headerIcon.classList.toggle("text-indigo-500", !enabled);
+    // headerIcon.style.opacity = "1";
+    // headerIcon.style.transform = "none";
+  }
+  if (note) {
+    note.classList.toggle("border-cyan-200", enabled);
+    note.classList.toggle("bg-cyan-50", enabled);
+    note.classList.toggle("border-slate-200", !enabled);
+    note.classList.toggle("bg-slate-50", !enabled);
+  }
+  if (noteIcon) {
+    noteIcon.classList.toggle("stroke-indigo-600", enabled);
+    noteIcon.classList.toggle("stroke-slate-400", !enabled);
+    noteIcon.style.opacity = enabled ? "1" : "0.75";
+  }
+  // Force visible ON/OFF switch colors regardless of Tailwind build cache.
+  if (switchTrack) {
+    switchTrack.style.backgroundColor = enabled ? "#4f46e5" : "#e2e8f0";
+    switchTrack.style.boxShadow = enabled ? "0 0 0 2px rgba(79,70,229,0.18)" : "none";
+  }
+  if (switchThumb) {
+    switchThumb.style.backgroundColor = enabled ? "#eef2ff" : "#ffffff";
+  }
 }
 
 async function testApiConnection() {
@@ -315,6 +365,7 @@ async function syncSettingsFromServer() {
   const patch = {};
   if (typeof s.guardrailEnabled === "boolean") patch.guardrailEnabled = s.guardrailEnabled;
   if (typeof s.autoAnonymize === "boolean") patch.autoAnonymize = s.autoAnonymize;
+  if (typeof s.contentModerationEnabled === "boolean") patch.contentModerationEnabled = s.contentModerationEnabled;
   if (typeof s.imageModerationEnabled === "boolean") patch.imageModerationEnabled = s.imageModerationEnabled;
   if (Array.isArray(s.enabledPlatformIds)) patch.enabledPlatformIds = s.enabledPlatformIds;
   if (Array.isArray(s.customDomains)) patch.customDomains = s.customDomains;
@@ -548,6 +599,10 @@ async function restore() {
   const imgModEl = $("imageModerationEnabled");
   if (imgModEl) imgModEl.checked = data.imageModerationEnabled !== false;
 
+  const textModEl = $("contentModerationEnabled");
+  if (textModEl) textModEl.checked = data.contentModerationEnabled !== false;
+  updateContentModerationVisualState();
+
   const savedEnabledIds = Array.isArray(data.enabledPlatformIds) ? data.enabledPlatformIds : [];
   renderPlatforms(savedEnabledIds);
 
@@ -561,6 +616,7 @@ async function save() {
   const apiUrl = $("apiBaseUrl")?.value.trim().replace(/\/+$/, "") || defaultApiBaseUrlForBuild();
   const guardrailEnabled = $("guardrailEnabled")?.checked !== false;
   const autoAnonymize = $("autoAnonymize")?.checked === true;
+  const contentModerationEnabled = $("contentModerationEnabled")?.checked !== false;
   const imageModerationEnabled = $("imageModerationEnabled")?.checked !== false;
 
   const perm = await ensureHostPermissionIfNeeded(apiUrl);
@@ -573,6 +629,7 @@ async function save() {
     apiBaseUrl: apiUrl,
     guardrailEnabled,
     autoAnonymize,
+    contentModerationEnabled,
     imageModerationEnabled,
     enabledPlatformIds: enabledPlatformIds,
     userAddedPlatforms,
@@ -652,6 +709,7 @@ async function init() {
   });
   $("apiBaseUrl")?.addEventListener("input", syncApiUrlUi);
   $("apiBaseUrl")?.addEventListener("change", syncApiUrlUi);
+  $("contentModerationEnabled")?.addEventListener("change", updateContentModerationVisualState);
   $("testConnectionBtn")?.addEventListener("click", () => { testApiConnection().catch(console.warn); });
 }
 

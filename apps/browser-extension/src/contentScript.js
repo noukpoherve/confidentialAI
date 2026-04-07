@@ -153,12 +153,14 @@
     try {
       const data = await chrome.storage.sync.get([
         "guardrailEnabled",
+        "contentModerationEnabled",
         "enabledPlatformIds",
         "customDomains",
         "userAddedPlatforms",
       ]);
       return {
         guardrailEnabled: data.guardrailEnabled !== false,
+        contentModerationEnabled: data.contentModerationEnabled !== false,
         enabledPlatformIds: Array.isArray(data.enabledPlatformIds) ? data.enabledPlatformIds : [],
         customDomains: Array.isArray(data.customDomains) ? data.customDomains : [],
         // Server-synced, per-user platforms
@@ -167,6 +169,7 @@
     } catch (_error) {
       return {
         guardrailEnabled: true,
+        contentModerationEnabled: true,
         enabledPlatformIds: [],
         customDomains: [],
         userAddedPlatforms: [],
@@ -175,8 +178,10 @@
   }
 
   let currentSiteConfig = null;
+  let contentModerationEnabled = true;
   async function refreshCurrentSiteConfig() {
     const userSiteSettings = await loadUserSiteSettings();
+    contentModerationEnabled = userSiteSettings.contentModerationEnabled !== false;
     currentSiteConfig = siteConfigApi.resolveCurrentSiteConfig(
       {
         hostname: window.location.hostname,
@@ -2199,6 +2204,8 @@
   async function analyzeAndMaybeBlock(event) {
     const cfg = getActiveSiteConfig();
     if (!cfg) return;
+    if (!(cfg.features || []).includes("textAnalysis")) return;
+    if (!contentModerationEnabled) return;
     if (extensionContextInvalid) return;
     if (replayingSubmission) return;
 
@@ -2304,11 +2311,24 @@
     // The editor pre-loads with the ALREADY ANONYMIZED text so the user only
     // needs to confirm or make minor edits before sending.
 
-    // ── SUGGEST_REPHRASE: language improvement (toxicity detected) ───────────
-    if (decision.action === "SUGGEST_REPHRASE") {
+    const decisionAction = String(decision.action || "");
+    const decisionDetections = Array.isArray(decision.detections) ? decision.detections : [];
+    const hasToxicDetection = decisionDetections.some((d) => d?.type === "TOXIC_LANGUAGE");
+    const hasRephraseSuggestions = Array.isArray(decision.suggestions) && decision.suggestions.length > 0;
+    const shouldOfferRephraseFirst =
+      decisionAction === "SUGGEST_REPHRASE"
+      || (
+        (decisionAction === "WARN" || decisionAction === "ANONYMIZE")
+        && hasToxicDetection
+        && hasRephraseSuggestions
+      );
+
+    // ── Rephrase-first path: always offer suggestions when toxicity is present ─
+    if (shouldOfferRephraseFirst) {
+      const rephraseOnlyDecision = decisionAction === "SUGGEST_REPHRASE";
       const rephrase = await showRephraseModal({
         suggestions: decision.suggestions || [],
-        detections: decision.detections || [],
+        detections: decisionDetections,
         riskScore: decision.riskScore || decision.risk_score || 0,
         originalPrompt: prompt,
       });
@@ -2318,24 +2338,38 @@
         return;
       }
       if (rephrase.status === "original") {
-        // User explicitly chose to send the original — bypass toxicity check once.
-        manualWarnBypassHash = hashString(prompt);
-        showToast(__("cs_sending_original"), "info");
-        replaySubmission(el);
-        return;
-      }
-      if (rephrase.status === "auto" || rephrase.status === "manual") {
+        if (rephraseOnlyDecision) {
+          // Pure toxicity path: allow one submit bypass to avoid an infinite loop.
+          manualWarnBypassHash = hashString(prompt);
+          showToast(__("cs_sending_original"), "info");
+          replaySubmission(el);
+          return;
+        }
+        // Mixed risk path (toxicity + sensitive detections): continue to the
+        // regular review modal so DLP actions remain enforced.
+      } else if (rephrase.status === "auto" || rephrase.status === "manual") {
         const chosenText = String(rephrase.prompt || "");
         if (!chosenText.trim()) { showUserAlert(__("cs_msg_empty")); return; }
         writePromptValue(el, chosenText);
-        manualWarnBypassHash = hashString(chosenText);
+        if (rephraseOnlyDecision) {
+          // Keep current UX for pure toxicity: user clicks Send manually.
+          manualWarnBypassHash = hashString(chosenText);
+          showToast(__("cs_msg_updated"), "success");
+          return;
+        }
+        // Mixed risk path: re-run full analysis on the edited text so privacy
+        // checks/redactions still apply.
         showToast(__("cs_msg_updated"), "success");
+        scheduleReplaySubmission(el);
         return;
       }
-      // Fallback: allow original
-      manualWarnBypassHash = hashString(prompt);
-      replaySubmission(el);
-      return;
+      if (rephraseOnlyDecision) {
+        // Fallback for pure toxicity path: allow original once.
+        manualWarnBypassHash = hashString(prompt);
+        replaySubmission(el);
+        return;
+      }
+      // Mixed path fallback: continue to standard review below.
     }
 
     if (decision.action === "BLOCK" || decision.action === "WARN" || decision.action === "ANONYMIZE") {
@@ -2436,6 +2470,8 @@
   async function analyzeResponseNode(node) {
     const cfg = getActiveSiteConfig();
     if (!cfg) return;
+    if (!(cfg.features || []).includes("textAnalysis")) return;
+    if (!contentModerationEnabled) return;
     if (extensionContextInvalid) return;
     const responseText = normalizeText(node.innerText || node.textContent || "");
     // Require at least 60 chars — avoids analysing partial streaming tokens.
@@ -2644,6 +2680,7 @@
     if (areaName !== "sync") return;
     if (
       !changes.guardrailEnabled &&
+      !changes.contentModerationEnabled &&
       !changes.enabledPlatformIds &&
       !changes.customDomains &&
       !changes.userAddedPlatforms

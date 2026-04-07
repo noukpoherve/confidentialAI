@@ -10,6 +10,7 @@ const items = [
   { suffix: "/dashboard/usage", key: "navUsage" as const },
   { suffix: "/dashboard/incidents", key: "navIncidents" as const },
   { suffix: "/dashboard/site-health", key: "navSiteHealth" as const },
+  { suffix: "/dashboard/test-runner", key: "navTestRunner" as const },
   { suffix: "/dashboard/billing", key: "navBilling" as const },
   { suffix: "/dashboard/settings", key: "navSettings" as const },
   { suffix: "/dashboard/api-reference", key: "navApiRef" as const },

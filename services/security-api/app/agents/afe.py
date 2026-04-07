@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from functools import lru_cache
 
 from app.core.detectors import (
@@ -9,6 +10,7 @@ from app.core.detectors import (
     build_url_protection_patterns,
     detect_sensitive_content,
 )
+from app.core.config import settings
 from app.core.policy_engine import (
     PolicyDecision,
     _build_detections,
@@ -19,6 +21,19 @@ from app.core.policy_engine import (
 from app.core.user_store import get_user_store
 
 logger = logging.getLogger(__name__)
+
+
+def _dev_debug_enabled() -> bool:
+    return settings.app_env in {"dev", "development", "local"}
+
+
+def _debug_person_filter(reason: str, text: str, label: str | None = None) -> None:
+    if not _dev_debug_enabled():
+        return
+    if label:
+        logger.debug("[spaCy PERSON filter] %s | label=%s | text=%r", reason, label, text)
+    else:
+        logger.debug("[spaCy PERSON filter] %s | text=%r", reason, text)
 
 ENGLISH_VERBS = frozenset(
     {
@@ -78,6 +93,24 @@ FRENCH_VERBS = frozenset(
         "définir",
         "charger",
         "sauvegarder",
+    }
+)
+
+# Tokens commonly found in insults/profanity that must never be interpreted as person names.
+PROFANITY_TOKENS = frozenset(
+    {
+        "fuck",
+        "fucking",
+        "shit",
+        "bitch",
+        "asshole",
+        "bastard",
+        "foutre",
+        "merde",
+        "con",
+        "connard",
+        "salope",
+        "pute",
     }
 )
 
@@ -230,17 +263,32 @@ def _reject_per_person_entity(ent, prompt: str) -> bool:
     """True → skip this PER / PERSON entity (false positive heuristics)."""
     text = ent.text.strip()
     tl = text.lower()
+    words = [w for w in re.split(r"\s+", text) if w]
     if tl in ENGLISH_VERBS | FRENCH_VERBS:
+        _debug_person_filter("reject: verb-like token", text, getattr(ent, "label_", None))
+        return True
+    if any(w.lower() in PROFANITY_TOKENS for w in words):
+        _debug_person_filter("reject: profanity token", text, getattr(ent, "label_", None))
+        return True
+    # PERSON entities are expected to contain at least one capitalized token.
+    # Lowercase chunks such as "fuck you" should be rejected as false positives.
+    if not any((w[:1].isupper() and any(c.isalpha() for c in w)) for w in words):
+        _debug_person_filter("reject: no capitalized token", text, getattr(ent, "label_", None))
         return True
     if len(text.split()) < 2:
         if ent.start == 0:
+            _debug_person_filter("reject: single token at sentence start", text, getattr(ent, "label_", None))
             return True
         if ent.start_char >= 2 and prompt[ent.start_char - 2] in ".!?\n":
+            _debug_person_filter("reject: single token after punctuation", text, getattr(ent, "label_", None))
             return True
     if text.isupper():
+        _debug_person_filter("reject: all uppercase", text, getattr(ent, "label_", None))
         return True
     if "_" in text or "-" in text:
+        _debug_person_filter("reject: contains underscore/hyphen", text, getattr(ent, "label_", None))
         return True
+    _debug_person_filter("accept", text, getattr(ent, "label_", None))
     return False
 
 
@@ -389,17 +437,32 @@ def _reject_per_person_entity(ent, prompt: str) -> bool:
     """True → skip this PER / PERSON entity (false positive heuristics)."""
     text = ent.text.strip()
     tl = text.lower()
+    words = [w for w in re.split(r"\s+", text) if w]
     if tl in ENGLISH_VERBS | FRENCH_VERBS:
+        _debug_person_filter("reject: verb-like token", text, getattr(ent, "label_", None))
+        return True
+    if any(w.lower() in PROFANITY_TOKENS for w in words):
+        _debug_person_filter("reject: profanity token", text, getattr(ent, "label_", None))
+        return True
+    # PERSON entities are expected to contain at least one capitalized token.
+    # Lowercase chunks such as "fuck you" should be rejected as false positives.
+    if not any((w[:1].isupper() and any(c.isalpha() for c in w)) for w in words):
+        _debug_person_filter("reject: no capitalized token", text, getattr(ent, "label_", None))
         return True
     if len(text.split()) < 2:
         if ent.start == 0:
+            _debug_person_filter("reject: single token at sentence start", text, getattr(ent, "label_", None))
             return True
         if ent.start_char >= 2 and prompt[ent.start_char - 2] in ".!?\n":
+            _debug_person_filter("reject: single token after punctuation", text, getattr(ent, "label_", None))
             return True
     if text.isupper():
+        _debug_person_filter("reject: all uppercase", text, getattr(ent, "label_", None))
         return True
     if "_" in text or "-" in text:
+        _debug_person_filter("reject: contains underscore/hyphen", text, getattr(ent, "label_", None))
         return True
+    _debug_person_filter("accept", text, getattr(ent, "label_", None))
     return False
 
 

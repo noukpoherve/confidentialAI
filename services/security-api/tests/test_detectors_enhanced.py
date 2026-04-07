@@ -47,6 +47,8 @@ def test_safe_url_not_flagged():
     "Putain de merde, ça marche pas.",
     "This is bullshit, you dickhead.",
     "Salope, va te coucher.",
+    "je vais vous poignarder",
+    "I will kill you",
 ])
 def test_toxic_language_detected(text):
     """Clear profanity in English or French should be flagged as TOXIC_LANGUAGE."""

@@ -95,6 +95,9 @@ DETECTOR_PATTERNS: dict[str, re.Pattern[str]] = {
         r"|s+a+l+o+p+e+|e+n+c+u+l+[eé]+(?:e)?|n+i+q+u+e+r?"
         r"|s+a+l+a+u+d+|p+u+t+e+|b+[aâ]+t+a+r+d+(?:e)?"
         r"|c+o+u+i+l+l+e+|f+o+u+t+r+e+"
+        # Threat / violent intent (EN + FR) — explicit forms only.
+        r"|i\s+will\s+(?:kill|stab)\s+you"
+        r"|je\s+vais\s+(?:te|vous)\s+(?:tuer|poignarder)"
         r")\b",
         re.UNICODE,
     ),

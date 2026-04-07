@@ -11,6 +11,11 @@ function pathnameHasLocale(pathname: string) {
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // API routes must stay unlocalized (/api/*), otherwise they become /{locale}/api/* and 404.
+  if (pathname === "/api" || pathname.startsWith("/api/")) {
+    return NextResponse.next();
+  }
+
   if (pathnameHasLocale(pathname)) {
     const locale = pathname.split("/")[1] || defaultLocale;
     const res = NextResponse.next();
@@ -30,5 +35,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next|.*\\..*).*)"],
+  matcher: ["/((?!api|_next|.*\\..*).*)"],
 };

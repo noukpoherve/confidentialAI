@@ -28,6 +28,7 @@ class Settings(BaseModel):
 
     api_name: str = "confidential-agent-security-api"
     api_version: str = "0.1.0"
+    app_env: str = os.getenv("APP_ENV", os.getenv("ENV", "development")).lower()
     max_prompt_chars: int = 20_000
     enable_strict_block_on_secret: bool = True
     mongodb_uri: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
@@ -70,7 +71,7 @@ class Settings(BaseModel):
     # Toxicity analyzer: LLM-based detection of vulgar / aggressive language
     # with 3-suggestion rephrasing to promote healthy communication.
     toxicity_analyzer_enabled: bool = (
-        os.getenv("TOXICITY_ANALYZER_ENABLED", _llm_enabled_default).lower() == "true"
+        os.getenv("TOXICITY_ANALYZER_ENABLED", "true").lower() == "true"
     )
     # Qdrant + embeddings: skip LLM classifier when a prompt is semantically
     # similar to a past BLOCK/WARN incident (fail-open if Qdrant/embeddings fail).

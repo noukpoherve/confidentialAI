@@ -1218,7 +1218,7 @@
    * Presents 3 AI-generated alternatives that preserve the user's intent while
    * removing offensive or aggressive language.  The user can:
    *   - Click "Use this" on any card → that phrasing is adopted and sent.
-   *   - Click "Edit manually" → the first suggestion loads in an editor.
+   *   - Click "Edit manually" → the user's original message loads in an editor.
    *   - Click "Send original" → the original text is submitted unchanged.
    *   - Click "Cancel" / press Esc → submission is aborted.
    *
@@ -1404,7 +1404,8 @@
         });
         editLbl.textContent = __("cs_edit_tone");
         const ta = document.createElement("textarea");
-        ta.value = suggestions[0] || originalPrompt;
+        // "Edit manually" must always start from the user's own text, not an AI suggestion.
+        ta.value = originalPrompt;
         Object.assign(ta.style, {
           width: "100%", minHeight: "90px", maxHeight: "180px",
           fontFamily: "ui-monospace,SFMono-Regular,monospace",
@@ -1452,7 +1453,10 @@
           editWrap.style.display = editOpen ? "block" : "none";
           editManualBtn.textContent = editOpen ? __("cs_btn_hide_editor") : __("cs_edit_manually");
           sendEditedBtn.style.display = editOpen ? "" : "none";
-          if (editOpen) setTimeout(() => ta.focus(), 40);
+          if (editOpen) {
+            ta.value = originalPrompt;
+            setTimeout(() => ta.focus(), 40);
+          }
         }
 
         function cleanupAndResolve(value) {

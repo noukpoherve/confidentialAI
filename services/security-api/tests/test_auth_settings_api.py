@@ -52,6 +52,7 @@ def test_get_and_update_user_settings(monkeypatch) -> None:
     assert default_settings.status_code == 200
     body = default_settings.json()
     assert body["guardrailEnabled"] is True
+    assert body["contentModerationEnabled"] is True
     assert isinstance(body["enabledPlatformIds"], list)
     assert isinstance(body["customDomains"], list)
 
@@ -60,11 +61,13 @@ def test_get_and_update_user_settings(monkeypatch) -> None:
         headers=headers,
         json={
             "guardrailEnabled": True,
+            "contentModerationEnabled": False,
             "enabledPlatformIds": ["chatgpt", "claude"],
             "customDomains": ["facebook.com", "teams.microsoft.com"],
         },
     )
     assert updated.status_code == 200
     updated_body = updated.json()
+    assert updated_body["contentModerationEnabled"] is False
     assert updated_body["enabledPlatformIds"] == ["chatgpt", "claude"]
     assert updated_body["customDomains"] == ["facebook.com", "teams.microsoft.com"]

@@ -8,6 +8,7 @@ const navKeys = [
   { href: "/dashboard/usage", key: "navUsage" as const },
   { href: "/dashboard/incidents", key: "navIncidents" as const },
   { href: "/dashboard/site-health", key: "navSiteHealth" as const },
+  { href: "/dashboard/test-runner", key: "navTestRunner" as const },
   { href: "/dashboard/billing", key: "navBilling" as const },
   { href: "/dashboard/settings", key: "navSettings" as const },
   { href: "/dashboard/api-reference", key: "navApiRef" as const },

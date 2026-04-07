@@ -152,6 +152,7 @@ Open `http://localhost:3000`.
 - Home: `http://localhost:3000`
 - Incidents: `http://localhost:3000/incidents`
 - Site health (telemetry): `http://localhost:3000/site-health`
+- Visual test runner: `http://localhost:3000/en/dashboard/test-runner`
 
 ## 5) Project progress (what is implemented)
 

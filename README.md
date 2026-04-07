@@ -23,9 +23,11 @@ The project is split into two layers:
 
 2. Server security layer
    - FastAPI prompt analysis API
-   - deterministic rules engine with risk score
-   - agent orchestration via **LangGraph** (`AFE`, `AVS`, `ASI`, `AC`; prompt path includes optional `vector_search` then optional LLM classifier)
+   - deterministic rules engine with risk score (regex + optional **spaCy** phrases for `LEGAL_HR`)
+   - agent orchestration via **LangGraph** (`AFE` → optional `vector_search` → optional LLM classifier → `AC` → optional **toxicity analyzer**; response path: `AVS` → LLM classifier → `AC` → optional toxicity)
+   - other agents: `ASI` for incident notifications
    - optional **Qdrant** semantic cache: similar past `BLOCK`/`WARN` prompts can skip the LLM classifier (see `services/security-api/README.md`)
+   - optional **image moderation** (`POST /v1/analyze-image`) when an OpenAI-compatible key is configured
    - MongoDB incident storage (in-memory fallback for local dev)
    - JWT auth + per-user settings (SaaS-ready foundation)
    - site telemetry from the extension (`/v1/site-signals`)
@@ -107,10 +109,13 @@ When Qdrant is running, you can open `http://localhost:6333/dashboard` or `curl 
 cd services/security-api
 uv python pin 3.13
 uv sync --group dev
+uv run python -m spacy download fr_core_news_sm   # phrase-based LEGAL_HR; skip if SPACY_ENABLED=false
 uv run uvicorn app.main:app --reload --port 8080
 ```
 
-API docs: `http://localhost:8080/docs` · Health: `http://localhost:8080/health`
+API docs: `http://localhost:8080/docs` · Health: `http://localhost:8080/health` (includes non-secret LLM config flags)
+
+The spaCy model is optional at runtime: if missing, start the API with `SPACY_ENABLED=false` in `services/security-api/.env`, or install the model as above.
 
 ### 4.2b Run the API (alternative: venv + pip)
 
@@ -122,6 +127,7 @@ python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e .
 pip install pytest          # optional, for running tests
+python -m spacy download fr_core_news_sm   # optional; omit if SPACY_ENABLED=false
 uvicorn app.main:app --reload --port 8080
 ```
 
@@ -157,6 +163,8 @@ Open `http://localhost:3000`.
 | Agents `AFE` / `AVS` / `ASI` / `AC` | Done | Wired in `app/agents/` + `orchestrator.py` |
 | Optional LLM classifier | Optional | Env-driven; see `services/security-api/README.md` |
 | Optional Qdrant + embeddings | Optional | Semantic shortcut before LLM (`text-embedding-3-small`); indexes `BLOCK`/`WARN` prompt incidents; fail-open if unavailable |
+| Toxicity analyzer (LLM) | Optional | Same key as classifier; `TOXICITY_ANALYZER_ENABLED` mirrors classifier auto-enable; can be disabled explicitly |
+| Image moderation (`/v1/analyze-image`) | Optional | OpenAI omni-moderation; fail-open if no key; optional **safe mode** thresholds in `config.py` / env |
 | Incidents store | Done | Mongo when available; in-memory fallback |
 | Auth (`/v1/auth/*`) + user settings | Done | JWT; settings for extension targeting |
 | Site signals (`/v1/site-signals/*`) | Done | Extension → API telemetry; dashboard summary |

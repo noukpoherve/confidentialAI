@@ -17,6 +17,7 @@
     const t = String(type || "").toUpperCase();
     if (!t) return null;
     if (t === "TOXIC_LANGUAGE") return "toxicity";
+    if (t === "HARMFUL_URL" || t === "LLM_HARMFUL_CONTENT") return "toxicity";
     if (t === "IMAGE_SEXUAL_MINORS") return "image_sexual_minors";
     if (t === "IMAGE_SEXUAL" || t === "IMAGE_PARTIAL_NUDITY") return "image_sexual";
     if (t.includes("HARASSMENT")) return "harassment";
@@ -30,10 +31,10 @@
       "INTERNAL_URL",
       "SOURCE_CODE",
       "LEGAL_HR",
-      "HARMFUL_URL",
       "URL_CONFIDENTIELLE",
     ]);
-    if (dataPrivacyTypes.has(t) || t.startsWith("LLM_")) return "data_privacy";
+    if (dataPrivacyTypes.has(t)) return "data_privacy";
+    if (t.startsWith("LLM_")) return "data_privacy";
     return null;
   }
 
@@ -154,6 +155,8 @@
       const data = await chrome.storage.sync.get([
         "guardrailEnabled",
         "contentModerationEnabled",
+        "responseModerationEnabled",
+        "avsRevealBlurred",
         "enabledPlatformIds",
         "customDomains",
         "userAddedPlatforms",
@@ -161,6 +164,8 @@
       return {
         guardrailEnabled: data.guardrailEnabled !== false,
         contentModerationEnabled: data.contentModerationEnabled !== false,
+        responseModerationEnabled: data.responseModerationEnabled !== false,
+        avsRevealBlurred: data.avsRevealBlurred === true,
         enabledPlatformIds: Array.isArray(data.enabledPlatformIds) ? data.enabledPlatformIds : [],
         customDomains: Array.isArray(data.customDomains) ? data.customDomains : [],
         // Server-synced, per-user platforms
@@ -170,6 +175,8 @@
       return {
         guardrailEnabled: true,
         contentModerationEnabled: true,
+        responseModerationEnabled: true,
+        avsRevealBlurred: false,
         enabledPlatformIds: [],
         customDomains: [],
         userAddedPlatforms: [],
@@ -179,9 +186,40 @@
 
   let currentSiteConfig = null;
   let contentModerationEnabled = true;
+  let responseModerationEnabled = true;
+  let avsRevealBlurred = false;
+
+  function injectAvsRevealStyles() {
+    if (document.getElementById("confidential-agent-avs-reveal-style")) return;
+    const style = document.createElement("style");
+    style.id = "confidential-agent-avs-reveal-style";
+    style.textContent = `
+      html.ca-avs-reveal span[data-confidential-agent-redacted="true"] {
+        filter: none !important;
+        user-select: text !important;
+        pointer-events: auto !important;
+      }
+      html.ca-avs-reveal [data-confidential-agent-masked="true"] {
+        filter: none !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        user-select: text !important;
+      }
+    `;
+    document.documentElement.appendChild(style);
+  }
+
+  function applyAvsRevealDocumentClass() {
+    document.documentElement.classList.toggle("ca-avs-reveal", avsRevealBlurred === true);
+  }
+
   async function refreshCurrentSiteConfig() {
     const userSiteSettings = await loadUserSiteSettings();
     contentModerationEnabled = userSiteSettings.contentModerationEnabled !== false;
+    responseModerationEnabled = userSiteSettings.responseModerationEnabled !== false;
+    avsRevealBlurred = userSiteSettings.avsRevealBlurred === true;
+    injectAvsRevealStyles();
+    applyAvsRevealDocumentClass();
     currentSiteConfig = siteConfigApi.resolveCurrentSiteConfig(
       {
         hostname: window.location.hostname,
@@ -2018,6 +2056,7 @@
   async function moderateImageFile(file, inputElement) {
     const cfg = getActiveSiteConfig();
     if (!cfg) return;
+    if (cfg.universalFallback) return;
     if (!(cfg.features || []).includes("imageModeration")) return;
     if (extensionContextInvalid) return;
 
@@ -2058,6 +2097,15 @@
     }
 
     const decision = result.data;
+    const detectionTypes = new Set(
+      (decision.detections || []).map((d) => String(d?.type || "").toUpperCase())
+    );
+    const hasDeterministicMoralSignal =
+      detectionTypes.has("TOXIC_LANGUAGE") || detectionTypes.has("HARMFUL_URL");
+    const llmOnlyHarmfulSignal =
+      detectionTypes.size > 0 &&
+      detectionTypes.has("LLM_HARMFUL_CONTENT") &&
+      !hasDeterministicMoralSignal;
     if (decision.action === "ALLOW") {
       URL.revokeObjectURL(previewObjectUrl);
       return;
@@ -2092,7 +2140,7 @@
         const input = event.target;
         if (!(input instanceof HTMLInputElement) || input.type !== "file") return;
         const cfg = getActiveSiteConfig();
-        if (!cfg || !(cfg.features || []).includes("imageModeration")) return;
+        if (!cfg || cfg.universalFallback || !(cfg.features || []).includes("imageModeration")) return;
 
         const files = Array.from(input.files || []).filter((f) =>
           f.type.startsWith("image/")
@@ -2119,7 +2167,7 @@
       "paste",
       async (event) => {
         const cfg = getActiveSiteConfig();
-        if (!cfg || !(cfg.features || []).includes("imageModeration")) return;
+        if (!cfg || cfg.universalFallback || !(cfg.features || []).includes("imageModeration")) return;
 
         const items = Array.from(event.clipboardData?.items || []);
         const imageItems = items.filter((i) => i.type.startsWith("image/"));
@@ -2208,6 +2256,8 @@
   async function analyzeAndMaybeBlock(event) {
     const cfg = getActiveSiteConfig();
     if (!cfg) return;
+    // Open-web fallback: only AVS (response scan), not prompt interception on every site.
+    if (cfg.universalFallback) return;
     if (!(cfg.features || []).includes("textAnalysis")) return;
     if (!contentModerationEnabled) return;
     if (extensionContextInvalid) return;
@@ -2475,7 +2525,7 @@
     const cfg = getActiveSiteConfig();
     if (!cfg) return;
     if (!(cfg.features || []).includes("textAnalysis")) return;
-    if (!contentModerationEnabled) return;
+    if (!responseModerationEnabled) return;
     if (extensionContextInvalid) return;
     const responseText = normalizeText(node.innerText || node.textContent || "");
     // Require at least 60 chars — avoids analysing partial streaming tokens.
@@ -2527,6 +2577,24 @@
     }
 
     if (decision.action === "BLOCK") {
+      // If the block comes only from the semantic LLM classifier (no deterministic
+      // toxic/harmful URL hit), avoid auto-blurring single words like "thinking".
+      // We keep a visible warning and let the user decide to hide manually.
+      if (llmOnlyHarmfulSignal) {
+        insertResponseNotice(node, {
+          icon: "⚠️",
+          message: __("cs_response_flagged"),
+          color: "#7c2d12",
+          bgColor: "#fff7ed",
+          borderColor: "#fed7aa",
+        });
+        showResponseWarningBanner(node, __("cs_response_warn"), (keepVisible) => {
+          if (!keepVisible) {
+            maskResponseNode(node, __("cs_mask_hidden"));
+          }
+        });
+        return;
+      }
       // Preferred path: blur only the identified sensitive fragments.
       // The rest of the response remains fully readable.
       const surgicalOk = redactResponseNodeSurgically(node, decision.redactions, "BLOCK");
@@ -2682,18 +2750,22 @@
   domObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
   chrome.storage.onChanged?.addListener((changes, areaName) => {
     if (areaName !== "sync") return;
-    if (
-      !changes.guardrailEnabled &&
-      !changes.contentModerationEnabled &&
-      !changes.enabledPlatformIds &&
-      !changes.customDomains &&
-      !changes.userAddedPlatforms
-    ) {
-      return;
+    if (changes.avsRevealBlurred) {
+      avsRevealBlurred = changes.avsRevealBlurred.newValue === true;
+      applyAvsRevealDocumentClass();
     }
-    refreshCurrentSiteConfig().then(() => {
-      scheduleResponseScan();
-    });
+    const shouldRefresh =
+      Boolean(changes.guardrailEnabled) ||
+      Boolean(changes.contentModerationEnabled) ||
+      Boolean(changes.responseModerationEnabled) ||
+      Boolean(changes.enabledPlatformIds) ||
+      Boolean(changes.customDomains) ||
+      Boolean(changes.userAddedPlatforms);
+    if (shouldRefresh) {
+      refreshCurrentSiteConfig().then(() => {
+        scheduleResponseScan();
+      });
+    }
   });
   if (getActiveSiteConfig()) {
     reportSiteSignal("SITE_SELECTED", "Guardrail active for this host.").catch(() => {});

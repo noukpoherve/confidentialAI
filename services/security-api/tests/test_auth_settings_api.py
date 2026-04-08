@@ -53,6 +53,8 @@ def test_get_and_update_user_settings(monkeypatch) -> None:
     body = default_settings.json()
     assert body["guardrailEnabled"] is True
     assert body["contentModerationEnabled"] is True
+    assert body["responseModerationEnabled"] is True
+    assert body["avsRevealBlurred"] is False
     assert isinstance(body["enabledPlatformIds"], list)
     assert isinstance(body["customDomains"], list)
 

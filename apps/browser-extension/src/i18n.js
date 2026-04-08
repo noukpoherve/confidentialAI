@@ -129,12 +129,20 @@
       opt_auto_anon_note_html:
         'Example: "Contact me at john@company.com or +1 555 123 4567" becomes "Contact me at [EMAIL] or [PHONE]" before sending.',
       opt_txtmod_title: "Content Moderation",
-      opt_txtmod_subtitle: "Analyze prompts and AI responses for unsafe content",
+      opt_txtmod_subtitle: "Analyze what you send for unsafe or toxic content",
       opt_txtmod_enable: "Enable content moderation",
       opt_txtmod_enable_desc:
-        "When enabled, prompts and generated responses are analyzed for policy risks (sensitive content, toxicity, and unsafe language). Disable this to keep only data anonymization and image moderation.",
+        "When enabled, your outgoing messages are checked for toxicity and policy risks before they are sent. This does not include data anonymization (handled above) or response-side AVS (see below).",
       opt_txtmod_note_html:
         "Example: a prompt containing insults or harassment is flagged before sending so you can edit it and avoid posting harmful content.",
+      opt_avs_title: "Response moderation (AVS)",
+      opt_avs_subtitle: "Scan assistant replies for harmful or immoral content — not personal data",
+      opt_avs_enable: "Enable response moderation",
+      opt_avs_enable_desc:
+        "When enabled, AI-generated answers on assistant sites are analyzed for inappropriate content (profanity, harmful links, unsafe themes). Personal emails, phone numbers, or ordinary text are not blurred by AVS.",
+      opt_avs_reveal: "Show blurred AVS content",
+      opt_avs_reveal_desc:
+        "When on, text that AVS blurred or masked is shown in clear. Use only in a safe environment.",
       opt_imgmod_title: "Image Moderation",
       opt_imgmod_subtitle: "Scan uploads for sensitive visual content",
       opt_imgmod_enable: "Enable image moderation",
@@ -395,12 +403,20 @@
       opt_auto_anon_note_html:
         'Exemple : "Contactez-moi a john@company.com ou au +33 6 12 34 56 78" devient "Contactez-moi a [EMAIL] ou au [PHONE]" avant envoi.',
       opt_txtmod_title: "Modération de contenu",
-      opt_txtmod_subtitle: "Analyser les prompts et réponses IA pour le contenu à risque",
+      opt_txtmod_subtitle: "Analyser ce que vous envoyez pour le contenu à risque ou toxique",
       opt_txtmod_enable: "Activer la modération de contenu",
       opt_txtmod_enable_desc:
-        "Si activée, les prompts et réponses générées sont analysés pour les risques de politique (contenu sensible, toxicité et langage agressif). Désactivez-la pour conserver uniquement l’anonymisation des données et la modération d’images.",
+        "Si activée, vos messages sortants sont vérifiés avant envoi (toxicité, risques de politique). Ce n’est pas l’anonymisation des données (ci-dessus) ni la modération des réponses AVS (ci-dessous).",
       opt_txtmod_note_html:
         "Exemple : un prompt contenant des insultes ou du harcèlement est signalé avant l’envoi, pour vous permettre de le corriger et d’éviter de publier un contenu nuisible.",
+      opt_avs_title: "Modération des réponses (AVS)",
+      opt_avs_subtitle: "Analyser les réponses de l’assistant pour le contenu nuisible ou immoral — pas les données personnelles",
+      opt_avs_enable: "Activer la modération des réponses",
+      opt_avs_enable_desc:
+        "Si activée, les réponses générées sur les sites d’assistants sont analysées pour le contenu inapproprié (grossièretés, liens nuisibles, thèmes dangereux). Les e-mails, téléphones ou textes ordinaires ne sont pas floutés par l’AVS.",
+      opt_avs_reveal: "Afficher le contenu flouté par l’AVS",
+      opt_avs_reveal_desc:
+        "Si activé, le texte masqué ou flouté par l’AVS redevient lisible. À utiliser seulement dans un environnement sûr.",
       opt_imgmod_title: "Modération d’images",
       opt_imgmod_subtitle: "Analyser les fichiers joints pour détecter du contenu sensible",
       opt_imgmod_enable: "Activer la modération d’images",

@@ -91,7 +91,9 @@ def _response_toxicity_node(state: ResponseGraphState) -> ResponseGraphState:
 
 
 def _response_llm_classifier_node(state: ResponseGraphState) -> ResponseGraphState:
-    decision = run_llm_classifier(text=state["response_text"], decision=state["decision"])
+    decision = run_llm_classifier(
+        text=state["response_text"], decision=state["decision"], response_moral=True
+    )
     return {"decision": decision, "visited": [*state.get("visited", []), "llm_classifier"]}
 
 

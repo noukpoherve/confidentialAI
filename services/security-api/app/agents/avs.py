@@ -1,24 +1,18 @@
-from app.core.policy_engine import PolicyDecision, analyze_response
+from app.core.policy_engine import PolicyDecision, analyze_avs_response
 
 
 def run_avs(response_text: str) -> PolicyDecision:
     """
-    AVS (AI Validation Sentinel) — model output validation.
+    AVS (AI Validation Sentinel) — model output validation for *immoral / harmful*
+    content only on the deterministic regex layer.
 
-    Dual-purpose scanning of AI-generated responses:
+    Emails, phones, IBANs, API keys, HR phrases, prompt-injection heuristics, etc.
+    are intentionally excluded here so AVS does not blur benign AI answers that
+    merely mention everyday data. Those concerns belong to prompt-side
+    anonymization / input policy, not to AVS display moderation.
 
-    1. Data leakage detection — the model may reproduce sensitive data it was
-       shown earlier in the conversation (emails, API keys, internal URLs…).
-       Response-specific risk multipliers ensure these are weighted more
-       aggressively than the same patterns in a user prompt.
-
-    2. Indirect prompt injection — adversarial instructions embedded inside
-       a response payload designed to hijack subsequent interactions
-       (Slack AI 2024 vector). PROMPT_INJECTION carries weight 70 → BLOCK.
-
-    Uses analyze_response() (not analyze_prompt()) because:
-    - There is no user-consent concept for model outputs.
-    - Secrets reproduced in a response are always an immediate BLOCK.
-    - Lower WARN/ANONYMIZE thresholds catch subtle leakage early.
+    Regex stage: profanity / toxic language and known harmful URLs only
+    (see analyze_avs_response). Semantic harmful-content classification runs in
+    the LangGraph LLM node with a response-specific prompt.
     """
-    return analyze_response(response_text=response_text)
+    return analyze_avs_response(response_text=response_text)

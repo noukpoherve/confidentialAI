@@ -62,4 +62,23 @@ describe("siteConfigs resolution", () => {
     expect(cfg.id).toBe("user:u1");
     expect(cfg.features).toEqual(["textAnalysis"]);
   });
+
+  it("uses universal fallback for unknown hosts when guardrail is on", () => {
+    const cfg = Site.resolveCurrentSiteConfig(
+      { hostname: "random-news.example", pathname: "/", href: "https://random-news.example/" },
+      { guardrailEnabled: true }
+    );
+    expect(cfg).toBeTruthy();
+    expect(cfg.universalFallback).toBe(true);
+    expect(cfg.id).toBe("universal:random-news.example");
+    expect(cfg.features).toContain("textAnalysis");
+  });
+
+  it("returns null when guardrail is off even for unknown hosts", () => {
+    const cfg = Site.resolveCurrentSiteConfig(
+      { hostname: "random-news.example", pathname: "/", href: "https://random-news.example/" },
+      { guardrailEnabled: false }
+    );
+    expect(cfg).toBeNull();
+  });
 });

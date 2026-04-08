@@ -58,7 +58,35 @@ def _build_prompt(text: str) -> str:
     )
 
 
-def _call_classifier(text: str) -> dict | None:
+def _build_response_moral_prompt(text: str) -> str:
+    """LLM stage for AVS only: harmful / immoral model output — not PII or business data."""
+    sanitized = text.replace("[REDACTED_", "[SANITIZED_")
+    return (
+        "You classify text produced by an AI assistant for harmful or immoral content ONLY.\n"
+        "Do NOT flag emails, phone numbers, postal addresses, ordinary names, salaries, "
+        "business figures, internal URLs, credentials, or generic professional text.\n"
+        "Those are out of scope for this task.\n\n"
+        "Return ONLY valid JSON with exactly these keys:\n"
+        "  harmful     (boolean)          — true only if the text is sexually explicit, "
+        "graphically violent, hateful, harassing, self-harm related, child-safety risky, "
+        "extremist, or gives clearly illegal harmful instructions.\n"
+        "  severity    (low|medium|high)  — severity of harm if shown to the user\n"
+        "  confidence  (number 0..1)\n"
+        "  categories  (array of strings)  — one or more from:\n"
+        "      SEXUAL_CONTENT, VIOLENCE_GORE, HATE_HARASSMENT, SELF_HARM, CHILD_SAFETY, "
+        "EXTREMISM, ILLEGAL_ACTIVITY\n"
+        "  reason      (string)\n"
+        "  fragments   (array of strings) — EXACT substrings from the text that should be "
+        "hidden or blurred; [] if none can be isolated.\n\n"
+        "Rules:\n"
+        "  • When uncertain whether content is harmful, set harmful=false.\n"
+        "  • [SANITIZED_*] placeholders are safe.\n"
+        "  • fragments must appear verbatim in the input.\n\n"
+        f"Text:\n{sanitized}"
+    )
+
+
+def _call_classifier(text: str, *, response_moral: bool = False) -> dict | None:
     if not settings.llm_classifier_enabled:
         return None
     if not settings.llm_classifier_api_key:
@@ -69,12 +97,13 @@ def _call_classifier(text: str) -> dict | None:
         "Authorization": f"Bearer {settings.llm_classifier_api_key}",
         "Content-Type": "application/json",
     }
+    user_content = _build_response_moral_prompt(text) if response_moral else _build_prompt(text)
     body = {
         "model": settings.llm_classifier_model,
         "temperature": 0,
         "messages": [
             {"role": "system", "content": "You output strict JSON only."},
-            {"role": "user", "content": _build_prompt(text)},
+            {"role": "user", "content": user_content},
         ],
     }
 
@@ -160,12 +189,74 @@ def _escalate_decision(decision: PolicyDecision, result: dict, text: str) -> Pol
     return decision
 
 
-def run_llm_classifier(text: str, decision: PolicyDecision) -> PolicyDecision:
+def _escalate_response_moral_decision(decision: PolicyDecision, result: dict, text: str) -> PolicyDecision:
+    harmful = bool(result.get("harmful", False))
+    if not harmful:
+        return decision
+
+    severity = str(result.get("severity", "medium")).lower()
+    confidence = max(0.0, min(1.0, _to_float(result.get("confidence"), 0.7)))
+    reason = str(
+        result.get("reason", "LLM moral classifier flagged potentially harmful model output.")
+    ).strip()
+    categories = result.get("categories", [])
+    if not isinstance(categories, list):
+        categories = []
+
+    decision.reasons.append(f"LLM moral classifier: {reason}")
+    decision.detections.append(
+        {
+            "type": "LLM_HARMFUL_CONTENT",
+            "valuePreview": (text[:21] + "...") if len(text) > 24 else text,
+            "confidence": confidence,
+        }
+    )
+
+    if severity == "high":
+        decision.risk_score = max(decision.risk_score, 75)
+        decision.action = "BLOCK"
+    elif severity == "medium":
+        decision.risk_score = max(decision.risk_score, 45)
+        if decision.action in {"ALLOW", "ANONYMIZE"}:
+            decision.action = "WARN"
+    else:
+        decision.risk_score = max(decision.risk_score, 20)
+        if decision.action == "ALLOW":
+            decision.action = "ANONYMIZE"
+
+    if categories:
+        decision.reasons.append(f"LLM moral categories: {', '.join(str(c) for c in categories[:6])}")
+
+    fragments = result.get("fragments", [])
+    if isinstance(fragments, list):
+        category_label = categories[0] if categories else "HARMFUL_CONTENT"
+        for fragment in fragments:
+            fragment = str(fragment).strip()
+            already_covered = any(r.get("original") == fragment for r in decision.redactions)
+            if fragment and fragment in text and not already_covered:
+                decision.redactions.append(
+                    {
+                        "original": fragment,
+                        "replacement": f"[REDACTED_{str(category_label).upper().replace(' ', '_')}]",
+                        "reason": f"LLM moral classifier identified fragment: {category_label}",
+                    }
+                )
+
+    return decision
+
+
+def run_llm_classifier(
+    text: str, decision: PolicyDecision, *, response_moral: bool = False
+) -> PolicyDecision:
     """
-    Optional LLM-sensitive classifier node.
-    This runs in fail-open mode: on errors, the original decision is preserved.
+    Optional LLM classifier node.
+    Prompt pipeline: privacy / confidentiality (default).
+    AVS response pipeline: pass response_moral=True — harmful content only, not PII.
+    Fail-open on errors.
     """
-    result = _call_classifier(text)
+    result = _call_classifier(text, response_moral=response_moral)
     if not result:
         return decision
+    if response_moral:
+        return _escalate_response_moral_decision(decision, result, text)
     return _escalate_decision(decision, result, text)

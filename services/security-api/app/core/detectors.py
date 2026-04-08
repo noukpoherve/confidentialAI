@@ -234,6 +234,10 @@ def detect_sensitive_content(prompt: str) -> list[DetectorHit]:
         raw_value = match.group(0)
         if REDACTED_PLACEHOLDER_PATTERN.search(raw_value):
             continue
+        # Real-world BIC codes are typically written in uppercase. Requiring
+        # uppercase here removes many false positives from normal prose/usernames.
+        if raw_value != raw_value.upper():
+            continue
         token_upper = raw_value.upper()
         if not _is_plausible_swift_bic(token_upper):
             continue

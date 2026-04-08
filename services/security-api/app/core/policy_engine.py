@@ -201,3 +201,46 @@ def analyze_response(response_text: str) -> PolicyDecision:
         redactions=redactions,
         created_at=datetime.now(timezone.utc).isoformat(),
     )
+
+
+# AVS (validate-response) must not treat PII / secrets / HR context as policy signals.
+# Only moral-harm patterns (toxic language, known harmful URLs) from the regex layer.
+AVS_MORAL_HIT_TYPES = frozenset({"TOXIC_LANGUAGE", "HARMFUL_URL"})
+
+AVS_MORAL_WEIGHTS: dict[str, int] = {
+    # Toxic profanity in model output — meaningful score (prompt layer uses 0 on purpose).
+    "TOXIC_LANGUAGE": 32,
+    "HARMFUL_URL": 55,
+}
+
+
+def _score_avs_moral_hits(hit_types: list[str]) -> int:
+    raw = sum(AVS_MORAL_WEIGHTS.get(t, 0) for t in hit_types)
+    return min(raw, 100)
+
+
+def analyze_avs_response(response_text: str) -> PolicyDecision:
+    """
+    AVS regex stage: immoral / harmful content only (no PII, no secrets, no injection).
+
+    Uses the same response decision thresholds as analyze_response() but only
+    TOXIC_LANGUAGE and HARMFUL_URL detector hits contribute to the score.
+    """
+    hits = detect_sensitive_content(response_text)
+    moral_hits = [h for h in hits if h.hit_type in AVS_MORAL_HIT_TYPES]
+    hit_types = [h.hit_type for h in moral_hits]
+    unique_hit_types = set(hit_types)
+
+    risk_score = _score_avs_moral_hits(hit_types)
+    action, reasons = _decide_action_response(risk_score, unique_hit_types)
+
+    redactions = build_redactions(moral_hits) if action in {"ANONYMIZE", "WARN", "BLOCK"} else []
+
+    return PolicyDecision(
+        action=action,
+        risk_score=risk_score,
+        reasons=reasons,
+        detections=_build_detections(moral_hits),
+        redactions=redactions,
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )

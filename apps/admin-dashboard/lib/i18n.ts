@@ -1,12 +1,12 @@
-import type en from "../messages/en.json";
+import type en from "../i18n/en.json";
 
 export type Locale = "en" | "fr";
 
 export type Dictionary = typeof en;
 
 const dictionaries: Record<Locale, () => Promise<Dictionary>> = {
-  en: () => import("../messages/en.json").then((m) => m.default),
-  fr: () => import("../messages/fr.json").then((m) => m.default),
+  en: () => import("../i18n/en.json").then((m) => m.default),
+  fr: () => import("../i18n/fr.json").then((m) => m.default),
 };
 
 export async function getDictionary(locale: string): Promise<Dictionary> {

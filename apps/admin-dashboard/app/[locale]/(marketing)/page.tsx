@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { LandingExperience } from "../../../components/marketing/LandingExperience";
-import { LandingStoreRedirect } from "../../../components/marketing/LandingStoreRedirect";
 import { getDictionary } from "../../../lib/i18n";
 
 export async function generateMetadata({
@@ -21,10 +20,5 @@ export default async function LandingPage({ params }: { params: Promise<{ locale
   const { locale } = await params;
   const dict = await getDictionary(locale);
 
-  return (
-    <>
-      <LandingStoreRedirect locale={locale} />
-      <LandingExperience locale={locale} dict={dict} />
-    </>
-  );
+  return <LandingExperience locale={locale} dict={dict} />;
 }

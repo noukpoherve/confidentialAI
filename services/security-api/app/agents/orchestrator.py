@@ -8,12 +8,14 @@ from app.agents.vector_search_node import run_prompt_vector_search
 from app.agents.avs import run_avs
 from app.agents.toxicity_analyzer import run_toxicity_analyzer
 from app.core.config import settings
+from app.core.detectors import apply_redactions
 from app.core.policy_engine import PolicyDecision
 from langgraph.graph import END, START, StateGraph
 
 
 class PromptGraphState(TypedDict):
-    prompt: str
+    prompt: str                               # original — never modified
+    anonymized_prompt: NotRequired[str]       # prompt with all local-layer redactions applied
     user_consent: bool | None
     user_id: NotRequired[str | None]
     decision: NotRequired[PolicyDecision]
@@ -34,12 +36,23 @@ class AgentExecution:
 
 
 def _prompt_afe_node(state: PromptGraphState) -> PromptGraphState:
+    """
+    Run AFE (regex + URL protection + spaCy NER + GLiNER).
+    Immediately build the anonymized_prompt so every downstream node
+    works with PII-free text — especially the LLM classifier.
+    """
     decision = run_afe(
         prompt=state["prompt"],
         user_consent=state["user_consent"],
         user_id=state.get("user_id"),
     )
-    return {"decision": decision, "visited": [*state.get("visited", []), "afe"]}
+    # Apply all local redactions to produce a safe, anonymized version of the prompt.
+    anonymized = apply_redactions(state["prompt"], decision.redactions)
+    return {
+        "decision": decision,
+        "anonymized_prompt": anonymized,
+        "visited": [*state.get("visited", []), "afe"],
+    }
 
 
 def _prompt_ac_node(state: PromptGraphState) -> PromptGraphState:
@@ -48,13 +61,31 @@ def _prompt_ac_node(state: PromptGraphState) -> PromptGraphState:
 
 
 def _prompt_toxicity_node(state: PromptGraphState) -> PromptGraphState:
-    """Run toxicity analysis and rephrase-suggestion generation after security arbitration."""
+    """
+    Toxicity uses the ORIGINAL prompt: we want to detect and suggest rephrases
+    for the raw language, not for already-masked placeholders.
+    """
     decision = run_toxicity_analyzer(text=state["prompt"], decision=state["decision"])
     return {"decision": decision, "visited": [*state.get("visited", []), "toxicity_analyzer"]}
 
 
 def _prompt_llm_classifier_node(state: PromptGraphState) -> PromptGraphState:
-    decision = run_llm_classifier(text=state["prompt"], decision=state["decision"])
+    """
+    LLM classifier receives the PRE-ANONYMIZED prompt, never raw PII.
+
+    Local layers (regex, spaCy, GLiNER) have already replaced known sensitive
+    values with placeholders like [REDACTED_API_KEY], [PERSONNE], [EMAIL], etc.
+    The LLM's role here is purely contextual / semantic:
+      - Detect PII combinations that are only risky together
+        (e.g. "[PERSONNE] on floor 3, badge 4521")
+      - Detect confidential business context ("Q2 launch is top secret")
+      - Detect LEGAL_HR framing around anonymized entities
+      - Detect prompt injection attempts not caught by regex
+
+    The LLM is skipped entirely when the local layers already produced a BLOCK.
+    """
+    text_for_llm = state.get("anonymized_prompt") or state["prompt"]
+    decision = run_llm_classifier(text=text_for_llm, decision=state["decision"])
     return {"decision": decision, "visited": [*state.get("visited", []), "llm_classifier"]}
 
 
@@ -68,8 +99,16 @@ def _prompt_vector_search_node(state: PromptGraphState) -> PromptGraphState:
 
 
 def _route_prompt_after_vector_search(state: PromptGraphState) -> str:
-    """Bypass LLM classifier when vector similarity already escalated the decision."""
+    """
+    Skip the LLM classifier when:
+    - Vector search found a semantically similar past BLOCK/WARN (skip_llm_classifier=True).
+    - Local layers already produced a BLOCK decision — the data is definitely sensitive,
+      no need to spend an LLM call confirming it.
+    """
     if state.get("skip_llm_classifier"):
+        return "ac"
+    decision = state.get("decision")
+    if decision and decision.action == "BLOCK":
         return "ac"
     return "llm_classifier"
 
@@ -85,12 +124,16 @@ def _response_ac_node(state: ResponseGraphState) -> ResponseGraphState:
 
 
 def _response_toxicity_node(state: ResponseGraphState) -> ResponseGraphState:
-    """Run toxicity analysis on AI responses (e.g. hate speech in generated text)."""
     decision = run_toxicity_analyzer(text=state["response_text"], decision=state["decision"])
     return {"decision": decision, "visited": [*state.get("visited", []), "toxicity_analyzer"]}
 
 
 def _response_llm_classifier_node(state: ResponseGraphState) -> ResponseGraphState:
+    """
+    For AI responses the LLM moral classifier scans for harmful content only
+    (SEXUAL, VIOLENCE, HATE, SELF_HARM, etc.) — not PII, which is handled on
+    the prompt side. The response_moral=True flag enforces this scope.
+    """
     decision = run_llm_classifier(
         text=state["response_text"], decision=state["decision"], response_moral=True
     )
@@ -99,14 +142,11 @@ def _response_llm_classifier_node(state: ResponseGraphState) -> ResponseGraphSta
 
 def _route_after_ac(state: PromptGraphState | ResponseGraphState) -> str:
     """
-    Conditional routing after the Arbitration Controller (shared by prompt and response pipelines).
+    Conditional routing after the Arbitration Controller (shared by both pipelines).
 
     Skip the toxicity analyzer when:
     - The feature is disabled in settings.
-    - The security decision is already BLOCK (no point in tone suggestions).
-
-    In all other cases (ALLOW, WARN, ANONYMIZE) run the toxicity analyzer so
-    that suggestions are always available when the text is offensive in tone.
+    - The security decision is already BLOCK.
     """
     if not settings.toxicity_analyzer_enabled:
         return "end"
@@ -136,7 +176,6 @@ def _build_prompt_graph():
         {"llm_classifier": "llm_classifier", "ac": "ac"},
     )
     graph.add_edge("llm_classifier", "ac")
-    # Toxicity analyzer runs only for non-BLOCK decisions.
     graph.add_conditional_edges(
         "ac",
         _route_prompt_after_ac,
@@ -172,11 +211,24 @@ def analyze_prompt_with_agents(
     prompt: str, user_consent: bool | None, user_id: str | None = None
 ) -> AgentExecution:
     """
-    Prompt orchestration pipeline:
-    1) AFE for initial decision
-    2) Vector search (optional) — may skip LLM when similar to a past BLOCK/WARN
-    3) LLM classifier (optional) for dynamic detection
-    4) AC for arbitration of ambiguous cases
+    Prompt security pipeline — privacy-first, LLM as last resort.
+
+    1. AFE   — regex + protected URLs + spaCy NER + GLiNER (all local, no API calls).
+               Builds anonymized_prompt: a version with all detected PII replaced by
+               placeholders ([REDACTED_EMAIL], [PERSONNE], [CREDIT_CARD], …).
+
+    2. Vector search — semantic shortcut: if the (original) prompt is similar to a
+               past BLOCK/WARN incident, escalate immediately and skip the LLM.
+
+    3. LLM classifier — ONLY reached when local layers did NOT produce a BLOCK and
+               no vector match was found.  Receives the ANONYMIZED prompt, never raw
+               PII.  Its role: detect contextual/semantic risks invisible to regex/NER
+               (PII combinations, confidential business context, LEGAL_HR framing,
+               prompt injection variants).
+
+    4. AC    — arbitration pass for ambiguous medium-risk decisions.
+
+    5. Toxicity analyzer — rephrase suggestions for offensive language (non-BLOCK only).
     """
     result = _prompt_graph.invoke(
         {"prompt": prompt, "user_consent": user_consent, "user_id": user_id, "visited": []}
@@ -186,10 +238,14 @@ def analyze_prompt_with_agents(
 
 def validate_response_with_agents(response_text: str) -> AgentExecution:
     """
-    Response orchestration pipeline:
-    1) AVS for response-level validation
-    2) LLM classifier (optional) for dynamic detection
-    3) AC for arbitration of ambiguous cases
+    Response safety pipeline.
+
+    1. AVS    — regex stage: profanity and known harmful URLs only.
+    2. LLM classifier (response_moral=True) — harmful content classification:
+               SEXUAL, VIOLENCE, HATE, SELF_HARM, CHILD_SAFETY, EXTREMISM, ILLEGAL_ACTIVITY.
+               PII in responses is out of scope here (covered by the prompt pipeline).
+    3. AC     — arbitration.
+    4. Toxicity analyzer — detects hate/aggression in AI-generated text.
     """
     result = _response_graph.invoke({"response_text": response_text, "visited": []})
     return AgentExecution(decision=result["decision"], graph_trace=result.get("visited", []))

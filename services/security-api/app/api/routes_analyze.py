@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.agents.asi import notify_critical_incident
 from app.agents.image_moderator import run_image_moderator
 from app.agents.orchestrator import analyze_prompt_with_agents, validate_response_with_agents
-from app.core.auth import get_current_user_optional
+from app.core.auth import get_current_user, get_current_user_optional
 from app.core.config import settings
+from app.core.detectors import apply_redactions
 from app.core.incident_store import get_incident_store
 from app.schemas.analyze import (
     AnalyzeImageRequest,
@@ -14,18 +15,9 @@ from app.schemas.analyze import (
     ValidateResponseRequest,
     ValidateResponseResponse,
 )
+from app.core.rate_limiter import limiter
 
 router = APIRouter(prefix="/v1", tags=["analysis"])
-
-
-def _build_redacted_prompt(prompt: str, redactions: list[dict]) -> str:
-    redacted = prompt
-    for item in redactions:
-        original = str(item.get("original", ""))
-        replacement = str(item.get("replacement", "[REDACTED]"))
-        if original:
-            redacted = redacted.replace(original, replacement)
-    return redacted
 
 
 def _build_incident_payload(
@@ -55,9 +47,7 @@ def _build_incident_payload(
         "metadata": metadata,
         "graphTrace": graph_trace,
         # Keep a short redacted preview only, never raw prompt content.
-        "contentPreview": _build_redacted_prompt(raw_text, [r.model_dump() for r in response.redactions])[
-            :300
-        ],
+        "contentPreview": apply_redactions(raw_text, [r.model_dump() for r in response.redactions])[:300],
     }
     # Store rephrase suggestions when the toxicity analyzer triggered.
     if hasattr(response, "suggestions") and response.suggestions:
@@ -73,17 +63,19 @@ def _build_incident_payload(
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
+@limiter.limit(settings.rate_limit_analyze)
 def analyze(
-    request: AnalyzeRequest,
+    request: Request,
+    body: AnalyzeRequest,
     current_user: dict | None = Depends(get_current_user_optional),
 ) -> AnalyzeResponse:
     user_id = current_user.get("id") if current_user else None
     execution = analyze_prompt_with_agents(
-        prompt=request.prompt, user_consent=request.userConsent, user_id=user_id
+        prompt=body.prompt, user_consent=body.userConsent, user_id=user_id
     )
     decision = execution.decision
     response = AnalyzeResponse(
-        requestId=request.requestId,
+        requestId=body.requestId,
         action=decision.action,
         riskScore=decision.risk_score,
         reasons=decision.reasons,
@@ -94,11 +86,11 @@ def analyze(
         suggestions=decision.suggestions,
     )
     incident = _build_incident_payload(
-        request_id=request.requestId,
-        platform=request.platform,
-        raw_text=request.prompt,
-        user_consent=request.userConsent,
-        metadata=request.metadata.model_dump() if request.metadata else {},
+        request_id=body.requestId,
+        platform=body.platform,
+        raw_text=body.prompt,
+        user_consent=body.userConsent,
+        metadata=body.metadata.model_dump() if body.metadata else {},
         response=response,
         incident_type="PROMPT",
         graph_trace=execution.graph_trace,
@@ -113,11 +105,15 @@ def analyze(
 
 
 @router.post("/validate-response", response_model=ValidateResponseResponse)
-def validate_response(request: ValidateResponseRequest) -> ValidateResponseResponse:
-    execution = validate_response_with_agents(response_text=request.responseText)
+@limiter.limit(settings.rate_limit_validate_response)
+def validate_response(
+    request: Request,
+    body: ValidateResponseRequest,
+) -> ValidateResponseResponse:
+    execution = validate_response_with_agents(response_text=body.responseText)
     decision = execution.decision
     response = ValidateResponseResponse(
-        requestId=request.requestId,
+        requestId=body.requestId,
         action=decision.action,
         riskScore=decision.risk_score,
         reasons=decision.reasons,
@@ -128,11 +124,11 @@ def validate_response(request: ValidateResponseRequest) -> ValidateResponseRespo
         suggestions=decision.suggestions,
     )
     incident = _build_incident_payload(
-        request_id=request.requestId,
-        platform=request.platform,
-        raw_text=request.responseText,
+        request_id=body.requestId,
+        platform=body.platform,
+        raw_text=body.responseText,
         user_consent=None,
-        metadata=request.metadata.model_dump() if request.metadata else {},
+        metadata=body.metadata.model_dump() if body.metadata else {},
         response=response,
         incident_type="RESPONSE",
         graph_trace=execution.graph_trace,
@@ -146,16 +142,20 @@ def validate_response(request: ValidateResponseRequest) -> ValidateResponseRespo
 
 
 @router.post("/analyze-image", response_model=AnalyzeImageResponse)
-def analyze_image(request: AnalyzeImageRequest) -> AnalyzeImageResponse:
+@limiter.limit(settings.rate_limit_analyze_image)
+def analyze_image(
+    request: Request,
+    body: AnalyzeImageRequest,
+) -> AnalyzeImageResponse:
     """
     Moderate an image before upload.
     Uses OpenAI's omni-moderation-latest model to detect sexual content,
     graphic violence, hate, self-harm, harassment, and CSAM.
     Fails open when the API key is not configured.
     """
-    decision = run_image_moderator(request.imageBase64, request.imageMimeType)
+    decision = run_image_moderator(body.imageBase64, body.imageMimeType)
     response = AnalyzeImageResponse(
-        requestId=request.requestId,
+        requestId=body.requestId,
         action=decision.action,
         riskScore=decision.risk_score,
         reasons=decision.reasons,
@@ -165,18 +165,18 @@ def analyze_image(request: AnalyzeImageRequest) -> AnalyzeImageResponse:
     if decision.action in {"BLOCK", "WARN"}:
         incident = {
             "incidentType": "IMAGE",
-            "requestId": request.requestId,
-            "platform": request.platform,
+            "requestId": body.requestId,
+            "platform": body.platform,
             "action": decision.action,
             "riskScore": decision.risk_score,
             "reasons": decision.reasons,
             "detections": [d for d in decision.detections],
             "redactions": [],
             "createdAt": decision.created_at,
-            "tenantId": request.metadata.tenantId if request.metadata else None,
-            "metadata": request.metadata.model_dump() if request.metadata else {},
+            "tenantId": body.metadata.tenantId if body.metadata else None,
+            "metadata": body.metadata.model_dump() if body.metadata else {},
             # Never store the raw image — log only metadata.
-            "contentPreview": f"[IMAGE mime={request.imageMimeType}]",
+            "contentPreview": f"[IMAGE mime={body.imageMimeType}]",
         }
         try:
             get_incident_store().save_incident(incident)
@@ -187,7 +187,15 @@ def analyze_image(request: AnalyzeImageRequest) -> AnalyzeImageResponse:
 
 
 @router.get("/incidents")
-def list_incidents() -> dict:
+def list_incidents(
+    limit: int = settings.incidents_list_limit,
+    offset: int = 0,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """
+    List incidents — requires authentication.
+    Supports pagination via `limit` (max items) and `offset` (skip first N).
+    """
     store = get_incident_store()
-    items = store.list_incidents(limit=settings.incidents_list_limit)
-    return {"items": items, "total": len(items)}
+    items = store.list_incidents(limit=limit, offset=offset)
+    return {"items": items, "total": len(items), "limit": limit, "offset": offset}

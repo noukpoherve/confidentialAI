@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import type { Dictionary } from "../../lib/i18n";
 import { MobileDashboardNav } from "./MobileDashboardNav";
+import { LogoutButton } from "./LogoutButton";
 
 const navKeys = [
   { href: "/dashboard", key: "navOverview" as const },
@@ -14,7 +16,7 @@ const navKeys = [
   { href: "/dashboard/api-reference", key: "navApiRef" as const },
 ];
 
-export function DashboardShell({
+export async function DashboardShell({
   locale,
   dict,
   children,
@@ -25,6 +27,23 @@ export function DashboardShell({
 }) {
   const prefix = `/${locale}`;
   const d = dict.dashboard;
+
+  // Read user from cookie (set at login — available to server components via next/headers).
+  const cookieStore = await cookies();
+  const userRaw = cookieStore.get("ca_user")?.value;
+  let userEmail = "you@company.com";
+  let userInitial = "O";
+  try {
+    if (userRaw) {
+      const user = JSON.parse(decodeURIComponent(userRaw)) as { email?: string };
+      if (user.email) {
+        userEmail = user.email;
+        userInitial = user.email.charAt(0).toUpperCase();
+      }
+    }
+  } catch {
+    // fall through to defaults
+  }
 
   return (
     <div className="flex min-h-screen bg-surface">
@@ -60,12 +79,14 @@ export function DashboardShell({
           </div>
           <div className="mt-3 flex items-center gap-2 px-1">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-xs font-bold text-canvas">
-              {d.user.charAt(0)}
+              {userInitial}
             </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-canvas">{d.user}</p>
-              <p className="truncate text-xs text-white/45">you@company.com</p>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-canvas">{userEmail}</p>
             </div>
+          </div>
+          <div className="mt-2">
+            <LogoutButton locale={locale} label="Log out" />
           </div>
         </div>
       </aside>

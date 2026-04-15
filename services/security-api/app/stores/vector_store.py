@@ -1,10 +1,12 @@
 """
 Qdrant persistence for semantic similarity over past BLOCK/WARN prompt incidents.
+Qdrant calls retry up to 2 times with exponential backoff on transient errors.
 """
 
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from typing import Any
 from urllib.parse import urlparse
@@ -14,6 +16,9 @@ from qdrant_client.models import Distance, PointStruct, VectorParams
 
 from app.core.config import settings
 from app.services.embedding_service import get_embedding
+
+_MAX_RETRIES = 2
+_RETRY_BACKOFF_BASE = 0.3
 
 logger = logging.getLogger(__name__)
 
@@ -100,21 +105,24 @@ def upsert_incident_vector(
         return False
     if action not in {"BLOCK", "WARN"}:
         return False
-    try:
-        point = PointStruct(
-            id=str(uuid.uuid4()),
-            vector=vector,
-            payload={
-                "action": action,
-                "riskScore": int(risk_score),
-                "requestId": str(request_id),
-            },
-        )
-        client.upsert(collection_name=settings.qdrant_collection, points=[point])
-        return True
-    except Exception as exc:
-        logger.debug("Qdrant upsert failed: %s", exc)
-        return False
+    point = PointStruct(
+        id=str(uuid.uuid4()),
+        vector=vector,
+        payload={
+            "action": action,
+            "riskScore": int(risk_score),
+            "requestId": str(request_id),
+        },
+    )
+    for attempt in range(_MAX_RETRIES + 1):
+        if attempt > 0:
+            time.sleep(_RETRY_BACKOFF_BASE * (2 ** (attempt - 1)))
+        try:
+            client.upsert(collection_name=settings.qdrant_collection, points=[point])
+            return True
+        except Exception as exc:
+            logger.debug("Qdrant upsert failed (attempt %d/%d): %s", attempt + 1, _MAX_RETRIES + 1, exc)
+    return False
 
 
 def search_similar_incident(query_text: str) -> tuple[float, dict[str, Any]] | None:
@@ -130,21 +138,24 @@ def search_similar_incident(query_text: str) -> tuple[float, dict[str, Any]] | N
     vector = get_embedding(query_text)
     if vector is None:
         return None
-    try:
-        hits = client.search(
-            collection_name=settings.qdrant_collection,
-            query_vector=vector,
-            limit=1,
-            score_threshold=settings.vector_match_min_score,
-        )
-        if not hits:
-            return None
-        h = hits[0]
-        payload = h.payload or {}
-        return (float(h.score), payload)
-    except Exception as exc:
-        logger.debug("Qdrant search failed: %s", exc)
-        return None
+    for attempt in range(_MAX_RETRIES + 1):
+        if attempt > 0:
+            time.sleep(_RETRY_BACKOFF_BASE * (2 ** (attempt - 1)))
+        try:
+            hits = client.search(
+                collection_name=settings.qdrant_collection,
+                query_vector=vector,
+                limit=1,
+                score_threshold=settings.vector_match_min_score,
+            )
+            if not hits:
+                return None
+            h = hits[0]
+            payload = h.payload or {}
+            return (float(h.score), payload)
+        except Exception as exc:
+            logger.debug("Qdrant search failed (attempt %d/%d): %s", attempt + 1, _MAX_RETRIES + 1, exc)
+    return None
 
 
 def maybe_index_incident_from_payload(vector_text: str | None, incident: dict) -> None:

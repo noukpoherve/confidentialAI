@@ -102,6 +102,9 @@ def _call_moderation_api(image_base64: str, mime_type: str) -> dict | None:
         ],
     }
 
+    # NOTE: this call is synchronous and blocks an ASGI worker for up to
+    # IMAGE_MODERATION_TIMEOUT_SECONDS (default 15s).  A future version should
+    # offload this to a background task queue (Celery/ARQ) for high-traffic deployments.
     try:
         timeout = settings.image_moderation_timeout_seconds
         with httpx.Client(timeout=timeout) as client:
@@ -115,6 +118,13 @@ def _call_moderation_api(image_base64: str, mime_type: str) -> dict | None:
             return None
         results = response.json().get("results", [])
         return results[0] if results else None
+    except httpx.TimeoutException:
+        logger.warning(
+            "OpenAI image moderation timed out after %.0fs — upload allowed (fail-open). "
+            "Increase IMAGE_MODERATION_TIMEOUT_SECONDS or move to async queue.",
+            settings.image_moderation_timeout_seconds,
+        )
+        return None
     except Exception as exc:
         logger.warning("OpenAI moderation request failed: %s", exc)
         return None

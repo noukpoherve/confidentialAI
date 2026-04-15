@@ -293,12 +293,154 @@ def _apply_spacy_ner(decision: PolicyDecision, prompt: str) -> PolicyDecision:
     return decision
 
 
+# ── GLiNER: transformer-based zero-shot NER (optional, fully local) ───────────
+# More accurate than spaCy for person names, addresses, and custom PII types.
+# Install: pip install gliner
+# Model:   urchade/gliner_multi-v2.1  (multilingual, ~300 MB, runs on CPU)
+# Enable:  GLINER_ENABLED=true in your .env
+
+# Entity labels sent to GLiNER — use natural-language strings (zero-shot protocol).
+_GLINER_LABELS: list[str] = [
+    "person name",
+    "location",
+    "organization",
+    "phone number",
+    "email address",
+    "date of birth",
+    "credit card number",
+    "social security number",
+    "passport number",
+    "national identity number",
+    "bank account number",
+    "postal address",
+    "ip address",
+    "salary or financial figure",
+    "medical record or diagnosis",
+]
+
+_GLINER_LABEL_TO_SEMANTIC: dict[str, str] = {
+    "person name": "PERSONNE",
+    "location": "LIEU",
+    "organization": "ORGANISATION",
+    "phone number": "PHONE",
+    "email address": "EMAIL",
+    "date of birth": "DATE_OF_BIRTH",
+    "credit card number": "CREDIT_CARD",
+    "social security number": "SSN",
+    "passport number": "PASSPORT",
+    "national identity number": "NATIONAL_ID",
+    "bank account number": "BANK_ACCOUNT",
+    "postal address": "ADDRESS",
+    "ip address": "IP_ADDRESS",
+    "salary or financial figure": "FINANCIAL_DATA",
+    "medical record or diagnosis": "MEDICAL_DATA",
+}
+
+_GLINER_THRESHOLD = 0.45  # Below this score → skip (reduces false positives)
+_GLINER_MAX_CHARS = 4000  # Truncate to keep inference fast
+
+
+@lru_cache(maxsize=1)
+def _load_gliner_model():
+    """Load and cache the GLiNER model. Returns None if not installed/available."""
+    try:
+        from gliner import GLiNER  # type: ignore[import]
+        model = GLiNER.from_pretrained(settings.gliner_model)
+        logger.info("GLiNER model loaded: %s", settings.gliner_model)
+        return model
+    except ImportError:
+        logger.warning(
+            "GLiNER not installed — stronger local NER disabled. "
+            "Install: pip install gliner"
+        )
+        return None
+    except Exception as exc:
+        logger.warning("GLiNER model load failed (%s) — falling back to spaCy only.", exc)
+        return None
+
+
+def _apply_gliner_ner(decision: PolicyDecision, prompt: str) -> PolicyDecision:
+    """
+    Optional GLiNER NER pass — runs after spaCy, catches entities spaCy missed.
+
+    GLiNER is a DeBERTa-based zero-shot NER model that understands natural-language
+    entity descriptions (e.g. "credit card number", "date of birth"). It runs fully
+    locally with no external API calls and is significantly more accurate than spaCy
+    for PII types outside the standard NER taxonomy (PERSON/ORG/LOC/DATE).
+
+    Fail-open: any error returns the decision unchanged.
+    """
+    if not settings.gliner_enabled:
+        return decision
+
+    model = _load_gliner_model()
+    if model is None:
+        return decision
+
+    try:
+        truncated = prompt[:_GLINER_MAX_CHARS]
+        entities = model.predict_entities(truncated, _GLINER_LABELS, threshold=_GLINER_THRESHOLD)
+    except Exception as exc:
+        logger.debug("GLiNER inference failed: %s", exc)
+        return decision
+
+    already_covered: set[str] = {
+        str(r.get("original", "")) for r in decision.redactions if r.get("original")
+    }
+    added = 0
+
+    for ent in entities:
+        text = str(ent.get("text", "")).strip()
+        label = str(ent.get("label", "")).lower()
+        score = float(ent.get("score", 0.0))
+
+        if not text or len(text) < 3:
+            continue
+        if _entity_overlaps_regex(text, already_covered):
+            continue
+
+        semantic = _GLINER_LABEL_TO_SEMANTIC.get(label, "INFORMATION_PERSONNELLE")
+        preview = (text[:21] + "...") if len(text) > 24 else text
+
+        decision.detections.append(
+            {
+                "type": semantic,
+                "valuePreview": preview,
+                "confidence": round(score, 3),
+            }
+        )
+        decision.redactions.append(
+            {
+                "original": text,
+                "replacement": f"[{semantic}]",
+                "reason": f"GLiNER NER ({label}): {semantic}",
+            }
+        )
+        already_covered.add(text)
+        added += 1
+
+    if added > 0 and decision.action == "ALLOW":
+        decision.action = "WARN"
+        if decision.risk_score < 40:
+            decision.risk_score = 40
+        decision.reasons.append("Named entities detected (GLiNER NER).")
+
+    return decision
+
+
 def run_afe(prompt: str, user_consent: bool | None, user_id: str | None = None) -> PolicyDecision:
     """
     AFE (Input Filtering Agent) for prompt-level risk analysis.
-    Delegates to deterministic policy logic, then enriches with spaCy NER for
-    entities not matched by regex (fail-open if NER unavailable).
-    When user_id is set, user-configured protected URLs are matched in the prompt.
+
+    Pipeline:
+    1. Deterministic regex detection (detectors.py).
+    2. User-configured protected URL matching (optional, requires user_id).
+    3. spaCy NER — local multilingual model for PERSON/LOC/ORG/DATE entities.
+    4. GLiNER NER — optional transformer-based zero-shot NER for finer PII
+       (credit cards, SSN, dates of birth, addresses, etc.) — see GLINER_ENABLED.
+
+    All NER layers are fail-open: a missing model or inference error returns the
+    decision from the previous layer unchanged.
     """
     decision = analyze_prompt(prompt=prompt, user_consent=user_consent)
 
@@ -338,7 +480,16 @@ def run_afe(prompt: str, user_consent: bool | None, user_id: str | None = None) 
             suggestions=decision.suggestions,
         )
 
+    # Layer 3 — spaCy NER (always attempted when spacy_enabled)
     try:
-        return _apply_spacy_ner(decision, prompt)
+        decision = _apply_spacy_ner(decision, prompt)
     except Exception:
-        return decision
+        pass
+
+    # Layer 4 — GLiNER NER (only when gliner_enabled=true)
+    try:
+        decision = _apply_gliner_ner(decision, prompt)
+    except Exception:
+        pass
+
+    return decision

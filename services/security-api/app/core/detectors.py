@@ -278,6 +278,32 @@ def detect_sensitive_content(prompt: str) -> list[DetectorHit]:
     return hits
 
 
+def apply_redactions(text: str, redactions: list[dict]) -> str:
+    """
+    Apply a list of {original, replacement} redaction entries to *text* in order.
+
+    Longer originals are applied first so that a substring of an already-replaced
+    placeholder does not get replaced again.  The resulting text contains only
+    redaction placeholders in place of the sensitive values — safe to pass to
+    an LLM without exposing real PII.
+    """
+    if not text or not redactions:
+        return text
+    # Sort by length descending to avoid partial overlaps (e.g. replace the full
+    # email before any sub-token of it).
+    ordered = sorted(
+        (r for r in redactions if r.get("original")),
+        key=lambda r: len(str(r["original"])),
+        reverse=True,
+    )
+    result = text
+    for item in ordered:
+        original = str(item["original"])
+        replacement = str(item.get("replacement", "[REDACTED]"))
+        result = result.replace(original, replacement)
+    return result
+
+
 def build_redactions(hits: list[DetectorHit]) -> list[dict[str, str]]:
     replacements: list[dict[str, str]] = []
     for hit in hits:

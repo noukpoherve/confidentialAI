@@ -98,7 +98,7 @@
       opt_account_title: "Account",
       opt_account_subtitle: "Sync your settings and platform list across devices",
       opt_account_blurb:
-        "Sign in to save your platform list to your account. Each user manages their own platforms independently.",
+        "Sign in to sync your settings and custom platform list to your Confidential Agent account. Settings are automatically pulled on login and pushed on every save.",
       opt_email_ph: "Email address",
       opt_password_ph: "Password",
       opt_login: "Log in",
@@ -371,7 +371,7 @@
       opt_account_title: "Compte",
       opt_account_subtitle: "Synchronisez vos réglages et la liste de plateformes entre appareils",
       opt_account_blurb:
-        "Connectez-vous pour enregistrer votre liste de plateformes sur votre compte. Chaque utilisateur gère ses propres plateformes.",
+        "Connectez-vous pour synchroniser vos réglages et plateformes personnalisées avec votre compte. Les réglages sont récupérés automatiquement à la connexion et envoyés à chaque sauvegarde.",
       opt_email_ph: "Adresse e-mail",
       opt_password_ph: "Mot de passe",
       opt_login: "Connexion",

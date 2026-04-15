@@ -98,7 +98,7 @@
       opt_account_title: "Account",
       opt_account_subtitle: "Sync your settings and platform list across devices",
       opt_account_blurb:
-        "Sign in to save your platform list to your account. Each user manages their own platforms independently.",
+        "Sign in to sync your settings and custom platform list to your Confidential Agent account. Settings are automatically pulled on login and pushed on every save.",
       opt_email_ph: "Email address",
       opt_password_ph: "Password",
       opt_login: "Log in",
@@ -120,12 +120,29 @@
       opt_env_production: "Environment: production API (no extra host permission).",
       opt_env_custom: "Environment: custom API — Chrome will ask to allow this host when you save.",
       opt_protection_title: "Protection",
-      opt_protection_subtitle: "Core guardrail and anonymization settings",
+      opt_protection_subtitle: "Guardrail and data anonymization settings",
       opt_guardrail: "Enable guardrail",
       opt_guardrail_desc: "Master switch. When off, no analysis is performed on any platform.",
       opt_auto_anon: "Auto-anonymize sensitive data",
       opt_auto_anon_desc:
         "When on, the AI automatically redacts detected sensitive fragments instead of asking you to edit manually.",
+      opt_auto_anon_note_html:
+        'Example: "Contact me at john@company.com or +1 555 123 4567" becomes "Contact me at [EMAIL] or [PHONE]" before sending.',
+      opt_txtmod_title: "Content Moderation",
+      opt_txtmod_subtitle: "Analyze what you send for unsafe or toxic content",
+      opt_txtmod_enable: "Enable content moderation",
+      opt_txtmod_enable_desc:
+        "When enabled, your outgoing messages are checked for toxicity and policy risks before they are sent. This does not include data anonymization (handled above) or response-side AVS (see below).",
+      opt_txtmod_note_html:
+        "Example: a prompt containing insults or harassment is flagged before sending so you can edit it and avoid posting harmful content.",
+      opt_avs_title: "Response moderation (AVS)",
+      opt_avs_subtitle: "Scan assistant replies for harmful or immoral content — not personal data",
+      opt_avs_enable: "Enable response moderation",
+      opt_avs_enable_desc:
+        "When enabled, AI-generated answers on assistant sites are analyzed for inappropriate content (profanity, harmful links, unsafe themes). Personal emails, phone numbers, or ordinary text are not blurred by AVS.",
+      opt_avs_reveal: "Show blurred AVS content",
+      opt_avs_reveal_desc:
+        "When on, text that AVS blurred or masked is shown in clear. Use only in a safe environment.",
       opt_imgmod_title: "Image Moderation",
       opt_imgmod_subtitle: "Scan uploads for sensitive visual content",
       opt_imgmod_enable: "Enable image moderation",
@@ -327,7 +344,7 @@
       awareness_image_sexual_minors_cta: "",
 
       awareness_data_privacy_message:
-        "Your personal data deserves protection. Sharing sensitive information with an AI may compromise your privacy. 🔒",
+        "Your personal data deserves protection. Sharing sensitive information with a web plateform may compromise your privacy. 🔒",
       awareness_data_privacy_legal:
         "In some countries, processing personal data without consent may be regulated by specific data protection laws.",
       awareness_data_privacy_disclaimer: "ℹ️ General information — not legal advice.",
@@ -354,7 +371,7 @@
       opt_account_title: "Compte",
       opt_account_subtitle: "Synchronisez vos réglages et la liste de plateformes entre appareils",
       opt_account_blurb:
-        "Connectez-vous pour enregistrer votre liste de plateformes sur votre compte. Chaque utilisateur gère ses propres plateformes.",
+        "Connectez-vous pour synchroniser vos réglages et plateformes personnalisées avec votre compte. Les réglages sont récupérés automatiquement à la connexion et envoyés à chaque sauvegarde.",
       opt_email_ph: "Adresse e-mail",
       opt_password_ph: "Mot de passe",
       opt_login: "Connexion",
@@ -377,12 +394,29 @@
       opt_env_custom:
         "Environnement : API personnalisée — Chrome demandera d’autoriser cet hôte à l’enregistrement.",
       opt_protection_title: "Protection",
-      opt_protection_subtitle: "Garde-fou et anonymisation",
+      opt_protection_subtitle: "Garde-fou et anonymisation des données",
       opt_guardrail: "Activer le garde-fou",
       opt_guardrail_desc: "Interrupteur principal. S’il est désactivé, aucune analyse n’est effectuée.",
       opt_auto_anon: "Anonymiser automatiquement les données sensibles",
       opt_auto_anon_desc:
         "Si activé, l’IA masque automatiquement les fragments sensibles détectés au lieu de vous demander une édition manuelle.",
+      opt_auto_anon_note_html:
+        'Exemple : "Contactez-moi a john@company.com ou au +33 6 12 34 56 78" devient "Contactez-moi a [EMAIL] ou au [PHONE]" avant envoi.',
+      opt_txtmod_title: "Modération de contenu",
+      opt_txtmod_subtitle: "Analyser ce que vous envoyez pour le contenu à risque ou toxique",
+      opt_txtmod_enable: "Activer la modération de contenu",
+      opt_txtmod_enable_desc:
+        "Si activée, vos messages sortants sont vérifiés avant envoi (toxicité, risques de politique). Ce n’est pas l’anonymisation des données (ci-dessus) ni la modération des réponses AVS (ci-dessous).",
+      opt_txtmod_note_html:
+        "Exemple : un prompt contenant des insultes ou du harcèlement est signalé avant l’envoi, pour vous permettre de le corriger et d’éviter de publier un contenu nuisible.",
+      opt_avs_title: "Modération des réponses (AVS)",
+      opt_avs_subtitle: "Analyser les réponses de l’assistant pour le contenu nuisible ou immoral — pas les données personnelles",
+      opt_avs_enable: "Activer la modération des réponses",
+      opt_avs_enable_desc:
+        "Si activée, les réponses générées sur les sites d’assistants sont analysées pour le contenu inapproprié (grossièretés, liens nuisibles, thèmes dangereux). Les e-mails, téléphones ou textes ordinaires ne sont pas floutés par l’AVS.",
+      opt_avs_reveal: "Afficher le contenu flouté par l’AVS",
+      opt_avs_reveal_desc:
+        "Si activé, le texte masqué ou flouté par l’AVS redevient lisible. À utiliser seulement dans un environnement sûr.",
       opt_imgmod_title: "Modération d’images",
       opt_imgmod_subtitle: "Analyser les fichiers joints pour détecter du contenu sensible",
       opt_imgmod_enable: "Activer la modération d’images",
@@ -591,7 +625,7 @@
       awareness_image_sexual_minors_cta: "",
 
       awareness_data_privacy_message:
-        "Vos données personnelles méritent d'être protégées. Partager des informations sensibles avec une IA peut compromettre votre confidentialité. 🔒",
+        "Vos données personnelles méritent d'être protégées. Partager des informations sensibles avec une plateforme web peut compromettre votre confidentialité. 🔒",
       awareness_data_privacy_legal:
         "Dans certains pays, le traitement de données personnelles sans consentement peut être encadré par des réglementations spécifiques sur la protection des données.",
       awareness_data_privacy_disclaimer: "ℹ️ Information générale — pas un avis juridique.",

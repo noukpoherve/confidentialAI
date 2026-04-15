@@ -19,7 +19,7 @@ def test_llm_classifier_escalates_allow_to_warn(monkeypatch) -> None:
     monkeypatch.setattr(
         llm_classifier,
         "_call_classifier",
-        lambda text: {
+        lambda text, response_moral=False: {
             "sensitive": True,
             "severity": "medium",
             "confidence": 0.89,
@@ -38,7 +38,9 @@ def test_llm_classifier_escalates_allow_to_warn(monkeypatch) -> None:
 def test_llm_classifier_fail_open_on_no_result(monkeypatch) -> None:
     from app.agents import llm_classifier
 
-    monkeypatch.setattr(llm_classifier, "_call_classifier", lambda text: None)
+    monkeypatch.setattr(
+        llm_classifier, "_call_classifier", lambda text, response_moral=False: None
+    )
     original = _base_decision()
     decision = run_llm_classifier("harmless", original)
     assert decision.action == "ALLOW"

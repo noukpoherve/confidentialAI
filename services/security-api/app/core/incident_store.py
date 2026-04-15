@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -16,25 +17,35 @@ class IncidentStore(Protocol):
     def save_incident(self, incident: dict) -> None:
         ...
 
-    def list_incidents(self, limit: int) -> list[dict]:
+    def list_incidents(self, limit: int, offset: int = 0) -> list[dict]:
         ...
 
 
 @dataclass
 class InMemoryIncidentStore:
+    """
+    In-memory fallback store used when MongoDB is unavailable.
+    Thread-safe: a reentrant lock guards all mutations and reads.
+    """
+
     items: list[dict] = field(default_factory=list)
+    _lock: threading.RLock = field(default_factory=threading.RLock, repr=False, compare=False)
 
     def save_incident(self, incident: dict) -> None:
         document = dict(incident)
         vector_text = document.pop("vectorSourceText", None)
-        self.items.insert(0, document)
+        with self._lock:
+            self.items.insert(0, document)
         try:
             maybe_index_incident_from_payload(vector_text, document)
         except Exception:
             pass
 
-    def list_incidents(self, limit: int) -> list[dict]:
-        return self.items[: max(limit, 0)]
+    def list_incidents(self, limit: int, offset: int = 0) -> list[dict]:
+        with self._lock:
+            start = max(offset, 0)
+            end = start + max(limit, 0)
+            return self.items[start:end]
 
 
 class MongoIncidentStore:
@@ -54,10 +65,11 @@ class MongoIncidentStore:
         except Exception:
             pass
 
-    def list_incidents(self, limit: int) -> list[dict]:
+    def list_incidents(self, limit: int, offset: int = 0) -> list[dict]:
         cursor = (
             self.collection.find({}, {"_id": 0})
             .sort("createdAt", -1)
+            .skip(max(offset, 0))
             .limit(max(limit, 0))
         )
         return list(cursor)

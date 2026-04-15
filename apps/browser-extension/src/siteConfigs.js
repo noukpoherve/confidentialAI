@@ -462,6 +462,28 @@ function buildCustomConfig(domain) {
 }
 
 /**
+ * When the hostname matches no seeded or user rule, still activate the extension
+ * for response-side AVS (universalFallback). Prompt send interception and image
+ * moderation are skipped on these hosts in the content script to avoid hooking
+ * every form on the open web.
+ */
+function buildUniversalFallbackConfig(hostname) {
+  const h = normalizeDomain(hostname) || "unknown";
+  return {
+    id: `universal:${h}`,
+    label: h,
+    type: "universal",
+    universalFallback: true,
+    features: ["textAnalysis", "imageModeration"],
+    domains: [h],
+    sendButtonPatterns: GENERIC_SEND_BUTTON_PATTERNS,
+    sendButtonSelectors: GENERIC_SEND_BUTTON_SELECTORS,
+    promptSelectors: GENERIC_PROMPT_SELECTORS,
+    responseSelectors: GENERIC_RESPONSE_SELECTORS,
+  };
+}
+
+/**
  * Build a config from a user-added platform entry (server-synced, per-user).
  * @param {{ id: string, label: string, domain: string, features: string[] }} entry
  */
@@ -541,7 +563,9 @@ function resolveCurrentSiteConfig(page, userSettings = {}) {
     }
   }
 
-  return null;
+  // 4. Any other web host — still run AVS on assistant-like content (see universalFallback).
+  if (!normalizedHost) return null;
+  return buildUniversalFallbackConfig(normalizedHost);
 }
 
 window.ConfidentialAgentSiteConfigs = {
@@ -549,6 +573,7 @@ window.ConfidentialAgentSiteConfigs = {
   resolveCurrentSiteConfig,
   getDefaultEnabledPlatformIds,
   buildUserAddedConfig,
+  buildUniversalFallbackConfig,
   normalizeDomain,
   parseUserSiteInput,
 };

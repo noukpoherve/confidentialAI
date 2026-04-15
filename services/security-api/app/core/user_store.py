@@ -117,6 +117,9 @@ def _default_settings() -> dict:
     return {
         "guardrailEnabled": True,
         "autoAnonymize": False,
+        "contentModerationEnabled": True,
+        "responseModerationEnabled": True,
+        "avsRevealBlurred": False,
         "imageModerationEnabled": True,
         "enabledPlatformIds": [],
         "customDomains": [],
@@ -137,6 +140,9 @@ def _build_settings_obj(payload: dict) -> dict:
     return {
         "guardrailEnabled": bool(payload.get("guardrailEnabled", True)),
         "autoAnonymize": bool(payload.get("autoAnonymize", False)),
+        "contentModerationEnabled": bool(payload.get("contentModerationEnabled", True)),
+        "responseModerationEnabled": bool(payload.get("responseModerationEnabled", True)),
+        "avsRevealBlurred": bool(payload.get("avsRevealBlurred", False)),
         "imageModerationEnabled": bool(payload.get("imageModerationEnabled", True)),
         "enabledPlatformIds": list(payload.get("enabledPlatformIds", [])),
         "customDomains": list(payload.get("customDomains", [])),

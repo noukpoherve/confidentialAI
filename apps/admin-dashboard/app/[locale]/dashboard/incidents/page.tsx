@@ -1,13 +1,37 @@
+import { cookies } from "next/headers";
 import { fetchIncidents } from "../../../../lib/api";
 
 export default async function IncidentsPage() {
-  let data: { items: Array<Record<string, unknown>>; total: number } = { items: [], total: 0 };
+  const cookieStore = await cookies();
+  const token = cookieStore.get("ca_token")?.value;
+
+  let data: { items: Array<Record<string, unknown>>; total: number; authRequired?: boolean } = {
+    items: [],
+    total: 0,
+  };
   let error: string | null = null;
 
   try {
-    data = await fetchIncidents();
+    data = await fetchIncidents(token);
   } catch (err) {
     error = err instanceof Error ? err.message : "Unknown error";
+  }
+
+  if (data.authRequired) {
+    return (
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight text-ink">Incidents</h2>
+        </div>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Your session has expired. Please{" "}
+          <a href="../login" className="font-semibold underline">
+            log in again
+          </a>{" "}
+          to view incidents.
+        </div>
+      </section>
+    );
   }
 
   const actionCounts = summarizeActions(data.items);

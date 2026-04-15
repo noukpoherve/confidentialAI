@@ -16,6 +16,11 @@ class UserPlatformEntry(BaseModel):
 class UserSettingsPayload(BaseModel):
     guardrailEnabled: bool = True
     autoAnonymize: bool = False
+    contentModerationEnabled: bool = True
+    # AI output (AVS): harmful / immoral content moderation on assistant replies — not PII.
+    responseModerationEnabled: bool = True
+    # When true, blurred or masked AVS fragments are shown in clear text on the page.
+    avsRevealBlurred: bool = False
     imageModerationEnabled: bool = True
     # IDs of built-in platforms the user has enabled (empty = use defaults = all).
     enabledPlatformIds: list[str] = Field(default_factory=list)

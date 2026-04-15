@@ -28,6 +28,7 @@ class Settings(BaseModel):
 
     api_name: str = "confidential-agent-security-api"
     api_version: str = "0.1.0"
+    app_env: str = os.getenv("APP_ENV", os.getenv("ENV", "development")).lower()
     max_prompt_chars: int = 20_000
     enable_strict_block_on_secret: bool = True
     mongodb_uri: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
@@ -50,8 +51,10 @@ class Settings(BaseModel):
     llm_classifier_model: str = os.getenv("LLM_CLASSIFIER_MODEL", "gpt-4.1-mini")
     llm_classifier_api_key: str = _llm_api_key
     llm_classifier_timeout_seconds: float = float(os.getenv("LLM_CLASSIFIER_TIMEOUT_SECONDS", "2.5"))
-    # Image moderation calls OpenAI /v1/moderations — often slower than text; too low → timeouts and fail-open ALLOW.
-    image_moderation_timeout_seconds: float = float(os.getenv("IMAGE_MODERATION_TIMEOUT_SECONDS", "45"))
+    # Image moderation calls OpenAI /v1/moderations.
+    # 15s is aggressive enough to avoid blocking ASGI workers for long; set higher via env if needed.
+    # In a future async refactor this should be a background task rather than blocking the request thread.
+    image_moderation_timeout_seconds: float = float(os.getenv("IMAGE_MODERATION_TIMEOUT_SECONDS", "15"))
     auth_secret_key: str = os.getenv(
         "AUTH_SECRET_KEY", "change-me-for-production-with-at-least-32-chars"
     )
@@ -70,7 +73,7 @@ class Settings(BaseModel):
     # Toxicity analyzer: LLM-based detection of vulgar / aggressive language
     # with 3-suggestion rephrasing to promote healthy communication.
     toxicity_analyzer_enabled: bool = (
-        os.getenv("TOXICITY_ANALYZER_ENABLED", _llm_enabled_default).lower() == "true"
+        os.getenv("TOXICITY_ANALYZER_ENABLED", "true").lower() == "true"
     )
     # Qdrant + embeddings: skip LLM classifier when a prompt is semantically
     # similar to a past BLOCK/WARN incident (fail-open if Qdrant/embeddings fail).
@@ -87,6 +90,21 @@ class Settings(BaseModel):
     vector_source_max_chars: int = int(os.getenv("VECTOR_SOURCE_MAX_CHARS", "4000"))
     spacy_enabled: bool = os.getenv("SPACY_ENABLED", "true").lower() == "true"
     spacy_model: str = os.getenv("SPACY_MODEL", "fr_core_news_sm")
+    # GLiNER: optional transformer-based NER layer (more accurate than spaCy, fully local).
+    # Install: pip install gliner  +  download model (see docs/ARCHITECTURE.md).
+    gliner_enabled: bool = os.getenv("GLINER_ENABLED", "false").lower() == "true"
+    gliner_model: str = os.getenv("GLINER_MODEL", "urchade/gliner_multi-v2.1")
+    # CORS: comma-separated list of allowed origins for the dashboard / extension.
+    # In development the dashboard runs on localhost:3000 by default.
+    allowed_origins: list[str] = [
+        o.strip()
+        for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
+        if o.strip()
+    ]
+    # Rate limits (slowapi format: "N/period", e.g. "60/minute").
+    rate_limit_analyze: str = os.getenv("RATE_LIMIT_ANALYZE", "60/minute")
+    rate_limit_validate_response: str = os.getenv("RATE_LIMIT_VALIDATE_RESPONSE", "60/minute")
+    rate_limit_analyze_image: str = os.getenv("RATE_LIMIT_ANALYZE_IMAGE", "20/minute")
 
 
 settings = Settings()

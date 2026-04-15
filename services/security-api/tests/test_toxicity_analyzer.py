@@ -65,12 +65,22 @@ def test_fail_open_when_disabled(settings_toxicity_off):
     assert result is decision
 
 
-def test_fail_open_when_llm_returns_none():
-    """Should return original decision when LLM call fails (network error)."""
+def test_fail_open_when_llm_returns_none_and_no_toxic_signal():
+    """Without a prior toxic signal, LLM failure keeps the original decision."""
     decision = _make_decision("ALLOW")
     with patch("app.agents.toxicity_analyzer._call_toxicity_llm", return_value=None):
         result = run_toxicity_analyzer("offensive text here", decision)
     assert result is decision
+
+
+def test_fallback_suggestions_when_llm_unavailable_and_toxic_signal_exists():
+    """With TOXIC_LANGUAGE already detected, LLM failure still returns suggestions."""
+    decision = _make_decision("ALLOW")
+    decision.detections = [{"type": "TOXIC_LANGUAGE", "valuePreview": "PROFANITY", "confidence": 0.9}]
+    with patch("app.agents.toxicity_analyzer._call_toxicity_llm", return_value=None):
+        result = run_toxicity_analyzer("fuck you", decision)
+    assert result.action == "SUGGEST_REPHRASE"
+    assert len(result.suggestions) == 3
 
 
 def test_allow_upgraded_to_suggest_rephrase():

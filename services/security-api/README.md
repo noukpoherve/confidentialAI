@@ -4,9 +4,10 @@ Central security decision API for AI prompts.
 
 ## Endpoints V1
 
-- `GET /health`
+- `GET /health` — liveness + non-secret LLM / classifier flags (`llmClassifierEnabled`, `llmKeyConfigured`, `llmApiHost`, `llmModel`)
 - `POST /v1/analyze`
 - `POST /v1/validate-response`
+- `POST /v1/analyze-image` — image moderation (omni-moderation); optional safe-mode thresholds (`SAFE_MODE_*` in `app/core/config.py`)
 - `GET /v1/incidents`
 - `POST /v1/site-signals`
 - `GET /v1/site-signals/recent`
@@ -52,7 +53,7 @@ curl -X POST http://localhost:8080/v1/analyze \
 
 ## Optional Qdrant (semantic similarity)
 
-When enabled, the prompt pipeline runs **`AFE` → `vector_search` → `llm_classifier` (skipped on strong match) → `AC` → …**. Embeddings use OpenAI-compatible **`text-embedding-3-small`** via the same API base/key as the LLM layer. Past **`BLOCK`** / **`WARN`** prompt incidents are indexed after save (Mongo still stores only redacted previews; raw text for indexing is not persisted in Mongo).
+When enabled, the prompt pipeline runs **`AFE` → `vector_search` → `llm_classifier` (skipped on strong match) → `AC` → optional `toxicity_analyzer` → END** (toxicity is skipped when the decision is already `BLOCK` or when `TOXICITY_ANALYZER_ENABLED=false`). Embeddings use OpenAI-compatible **`text-embedding-3-small`** via the same API base/key as the LLM layer. Past **`BLOCK`** / **`WARN`** prompt incidents are indexed after save (Mongo still stores only redacted previews; raw text for indexing is not persisted in Mongo).
 
 - **Fail-open**: if Qdrant or embeddings fail, the API falls back to the normal path (LLM classifier unchanged).
 - **Local Docker**: `docker compose -f infra/docker/docker-compose.yml up qdrant -d` then set `QDRANT_URL=http://localhost:6333`.
@@ -81,13 +82,21 @@ Set the following env vars to enable alerting for critical incidents:
 
 ## Optional LLM-sensitive classifier
 
-Set these env vars to enable dynamic LLM classification in the graph:
+**Default:** if `OPENAI_API_KEY` or `LLM_CLASSIFIER_API_KEY` is set, the LLM classifier turns on automatically — you do **not** need `LLM_CLASSIFIER_ENABLED=true` unless you want an explicit override. Set `LLM_CLASSIFIER_ENABLED=false` to force-disable while a key remains in the environment.
 
-- `LLM_CLASSIFIER_ENABLED=true`
-- `LLM_CLASSIFIER_API_KEY=<api_key>` (or `OPENAI_API_KEY`)
-- `LLM_CLASSIFIER_API_BASE=https://api.openai.com/v1`
-- `LLM_CLASSIFIER_MODEL=gpt-4.1-mini`
-- `LLM_CLASSIFIER_TIMEOUT_SECONDS=2.5`
+Useful overrides:
+
+- `LLM_CLASSIFIER_API_BASE` — OpenAI, Azure OpenAI, LM Studio, Ollama OpenAI adapter, etc.
+- `LLM_CLASSIFIER_MODEL` — default `gpt-4.1-mini`
+- `LLM_CLASSIFIER_TIMEOUT_SECONDS` — default `2.5` (fail-open: regex path wins if the LLM is slow)
+
+## Optional toxicity analyzer
+
+Uses the same LLM key / base as the classifier when enabled. Defaults follow the classifier (on when a key is present). Override with `TOXICITY_ANALYZER_ENABLED=false` to disable rephrase suggestions on prompts/responses.
+
+## Optional image moderation
+
+Uses OpenAI **`/v1/moderations`** (omni model). Configure `IMAGE_MODERATION_TIMEOUT_SECONDS` if image calls time out (default `45` s). Safe-mode thresholds for sexual content: `SAFE_MODE_ENABLED`, `SAFE_MODE_SEXUAL_THRESHOLD` (see `app/core/config.py`).
 
 ## Auth and user settings (SaaS-ready foundation)
 

@@ -17,6 +17,7 @@
     const t = String(type || "").toUpperCase();
     if (!t) return null;
     if (t === "TOXIC_LANGUAGE") return "toxicity";
+    if (t === "HARMFUL_URL" || t === "LLM_HARMFUL_CONTENT") return "toxicity";
     if (t === "IMAGE_SEXUAL_MINORS") return "image_sexual_minors";
     if (t === "IMAGE_SEXUAL" || t === "IMAGE_PARTIAL_NUDITY") return "image_sexual";
     if (t.includes("HARASSMENT")) return "harassment";
@@ -30,10 +31,10 @@
       "INTERNAL_URL",
       "SOURCE_CODE",
       "LEGAL_HR",
-      "HARMFUL_URL",
       "URL_CONFIDENTIELLE",
     ]);
-    if (dataPrivacyTypes.has(t) || t.startsWith("LLM_")) return "data_privacy";
+    if (dataPrivacyTypes.has(t)) return "data_privacy";
+    if (t.startsWith("LLM_")) return "data_privacy";
     return null;
   }
 
@@ -153,12 +154,18 @@
     try {
       const data = await chrome.storage.sync.get([
         "guardrailEnabled",
+        "contentModerationEnabled",
+        "responseModerationEnabled",
+        "avsRevealBlurred",
         "enabledPlatformIds",
         "customDomains",
         "userAddedPlatforms",
       ]);
       return {
         guardrailEnabled: data.guardrailEnabled !== false,
+        contentModerationEnabled: data.contentModerationEnabled !== false,
+        responseModerationEnabled: data.responseModerationEnabled !== false,
+        avsRevealBlurred: data.avsRevealBlurred === true,
         enabledPlatformIds: Array.isArray(data.enabledPlatformIds) ? data.enabledPlatformIds : [],
         customDomains: Array.isArray(data.customDomains) ? data.customDomains : [],
         // Server-synced, per-user platforms
@@ -167,6 +174,9 @@
     } catch (_error) {
       return {
         guardrailEnabled: true,
+        contentModerationEnabled: true,
+        responseModerationEnabled: true,
+        avsRevealBlurred: false,
         enabledPlatformIds: [],
         customDomains: [],
         userAddedPlatforms: [],
@@ -175,8 +185,41 @@
   }
 
   let currentSiteConfig = null;
+  let contentModerationEnabled = true;
+  let responseModerationEnabled = true;
+  let avsRevealBlurred = false;
+
+  function injectAvsRevealStyles() {
+    if (document.getElementById("confidential-agent-avs-reveal-style")) return;
+    const style = document.createElement("style");
+    style.id = "confidential-agent-avs-reveal-style";
+    style.textContent = `
+      html.ca-avs-reveal span[data-confidential-agent-redacted="true"] {
+        filter: none !important;
+        user-select: text !important;
+        pointer-events: auto !important;
+      }
+      html.ca-avs-reveal [data-confidential-agent-masked="true"] {
+        filter: none !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        user-select: text !important;
+      }
+    `;
+    document.documentElement.appendChild(style);
+  }
+
+  function applyAvsRevealDocumentClass() {
+    document.documentElement.classList.toggle("ca-avs-reveal", avsRevealBlurred === true);
+  }
+
   async function refreshCurrentSiteConfig() {
     const userSiteSettings = await loadUserSiteSettings();
+    contentModerationEnabled = userSiteSettings.contentModerationEnabled !== false;
+    responseModerationEnabled = userSiteSettings.responseModerationEnabled !== false;
+    avsRevealBlurred = userSiteSettings.avsRevealBlurred === true;
+    injectAvsRevealStyles();
+    applyAvsRevealDocumentClass();
     currentSiteConfig = siteConfigApi.resolveCurrentSiteConfig(
       {
         hostname: window.location.hostname,
@@ -1213,7 +1256,7 @@
    * Presents 3 AI-generated alternatives that preserve the user's intent while
    * removing offensive or aggressive language.  The user can:
    *   - Click "Use this" on any card → that phrasing is adopted and sent.
-   *   - Click "Edit manually" → the first suggestion loads in an editor.
+   *   - Click "Edit manually" → the user's original message loads in an editor.
    *   - Click "Send original" → the original text is submitted unchanged.
    *   - Click "Cancel" / press Esc → submission is aborted.
    *
@@ -1399,7 +1442,8 @@
         });
         editLbl.textContent = __("cs_edit_tone");
         const ta = document.createElement("textarea");
-        ta.value = suggestions[0] || originalPrompt;
+        // "Edit manually" must always start from the user's own text, not an AI suggestion.
+        ta.value = originalPrompt;
         Object.assign(ta.style, {
           width: "100%", minHeight: "90px", maxHeight: "180px",
           fontFamily: "ui-monospace,SFMono-Regular,monospace",
@@ -1447,7 +1491,10 @@
           editWrap.style.display = editOpen ? "block" : "none";
           editManualBtn.textContent = editOpen ? __("cs_btn_hide_editor") : __("cs_edit_manually");
           sendEditedBtn.style.display = editOpen ? "" : "none";
-          if (editOpen) setTimeout(() => ta.focus(), 40);
+          if (editOpen) {
+            ta.value = originalPrompt;
+            setTimeout(() => ta.focus(), 40);
+          }
         }
 
         function cleanupAndResolve(value) {
@@ -2009,6 +2056,7 @@
   async function moderateImageFile(file, inputElement) {
     const cfg = getActiveSiteConfig();
     if (!cfg) return;
+    if (cfg.universalFallback) return;
     if (!(cfg.features || []).includes("imageModeration")) return;
     if (extensionContextInvalid) return;
 
@@ -2049,6 +2097,15 @@
     }
 
     const decision = result.data;
+    const detectionTypes = new Set(
+      (decision.detections || []).map((d) => String(d?.type || "").toUpperCase())
+    );
+    const hasDeterministicMoralSignal =
+      detectionTypes.has("TOXIC_LANGUAGE") || detectionTypes.has("HARMFUL_URL");
+    const llmOnlyHarmfulSignal =
+      detectionTypes.size > 0 &&
+      detectionTypes.has("LLM_HARMFUL_CONTENT") &&
+      !hasDeterministicMoralSignal;
     if (decision.action === "ALLOW") {
       URL.revokeObjectURL(previewObjectUrl);
       return;
@@ -2083,7 +2140,7 @@
         const input = event.target;
         if (!(input instanceof HTMLInputElement) || input.type !== "file") return;
         const cfg = getActiveSiteConfig();
-        if (!cfg || !(cfg.features || []).includes("imageModeration")) return;
+        if (!cfg || cfg.universalFallback || !(cfg.features || []).includes("imageModeration")) return;
 
         const files = Array.from(input.files || []).filter((f) =>
           f.type.startsWith("image/")
@@ -2110,7 +2167,7 @@
       "paste",
       async (event) => {
         const cfg = getActiveSiteConfig();
-        if (!cfg || !(cfg.features || []).includes("imageModeration")) return;
+        if (!cfg || cfg.universalFallback || !(cfg.features || []).includes("imageModeration")) return;
 
         const items = Array.from(event.clipboardData?.items || []);
         const imageItems = items.filter((i) => i.type.startsWith("image/"));
@@ -2199,6 +2256,10 @@
   async function analyzeAndMaybeBlock(event) {
     const cfg = getActiveSiteConfig();
     if (!cfg) return;
+    // Open-web fallback: only AVS (response scan), not prompt interception on every site.
+    if (cfg.universalFallback) return;
+    if (!(cfg.features || []).includes("textAnalysis")) return;
+    if (!contentModerationEnabled) return;
     if (extensionContextInvalid) return;
     if (replayingSubmission) return;
 
@@ -2304,11 +2365,24 @@
     // The editor pre-loads with the ALREADY ANONYMIZED text so the user only
     // needs to confirm or make minor edits before sending.
 
-    // ── SUGGEST_REPHRASE: language improvement (toxicity detected) ───────────
-    if (decision.action === "SUGGEST_REPHRASE") {
+    const decisionAction = String(decision.action || "");
+    const decisionDetections = Array.isArray(decision.detections) ? decision.detections : [];
+    const hasToxicDetection = decisionDetections.some((d) => d?.type === "TOXIC_LANGUAGE");
+    const hasRephraseSuggestions = Array.isArray(decision.suggestions) && decision.suggestions.length > 0;
+    const shouldOfferRephraseFirst =
+      decisionAction === "SUGGEST_REPHRASE"
+      || (
+        (decisionAction === "WARN" || decisionAction === "ANONYMIZE")
+        && hasToxicDetection
+        && hasRephraseSuggestions
+      );
+
+    // ── Rephrase-first path: always offer suggestions when toxicity is present ─
+    if (shouldOfferRephraseFirst) {
+      const rephraseOnlyDecision = decisionAction === "SUGGEST_REPHRASE";
       const rephrase = await showRephraseModal({
         suggestions: decision.suggestions || [],
-        detections: decision.detections || [],
+        detections: decisionDetections,
         riskScore: decision.riskScore || decision.risk_score || 0,
         originalPrompt: prompt,
       });
@@ -2318,24 +2392,38 @@
         return;
       }
       if (rephrase.status === "original") {
-        // User explicitly chose to send the original — bypass toxicity check once.
-        manualWarnBypassHash = hashString(prompt);
-        showToast(__("cs_sending_original"), "info");
-        replaySubmission(el);
-        return;
-      }
-      if (rephrase.status === "auto" || rephrase.status === "manual") {
+        if (rephraseOnlyDecision) {
+          // Pure toxicity path: allow one submit bypass to avoid an infinite loop.
+          manualWarnBypassHash = hashString(prompt);
+          showToast(__("cs_sending_original"), "info");
+          replaySubmission(el);
+          return;
+        }
+        // Mixed risk path (toxicity + sensitive detections): continue to the
+        // regular review modal so DLP actions remain enforced.
+      } else if (rephrase.status === "auto" || rephrase.status === "manual") {
         const chosenText = String(rephrase.prompt || "");
         if (!chosenText.trim()) { showUserAlert(__("cs_msg_empty")); return; }
         writePromptValue(el, chosenText);
-        manualWarnBypassHash = hashString(chosenText);
+        if (rephraseOnlyDecision) {
+          // Keep current UX for pure toxicity: user clicks Send manually.
+          manualWarnBypassHash = hashString(chosenText);
+          showToast(__("cs_msg_updated"), "success");
+          return;
+        }
+        // Mixed risk path: re-run full analysis on the edited text so privacy
+        // checks/redactions still apply.
         showToast(__("cs_msg_updated"), "success");
+        scheduleReplaySubmission(el);
         return;
       }
-      // Fallback: allow original
-      manualWarnBypassHash = hashString(prompt);
-      replaySubmission(el);
-      return;
+      if (rephraseOnlyDecision) {
+        // Fallback for pure toxicity path: allow original once.
+        manualWarnBypassHash = hashString(prompt);
+        replaySubmission(el);
+        return;
+      }
+      // Mixed path fallback: continue to standard review below.
     }
 
     if (decision.action === "BLOCK" || decision.action === "WARN" || decision.action === "ANONYMIZE") {
@@ -2436,6 +2524,8 @@
   async function analyzeResponseNode(node) {
     const cfg = getActiveSiteConfig();
     if (!cfg) return;
+    if (!(cfg.features || []).includes("textAnalysis")) return;
+    if (!responseModerationEnabled) return;
     if (extensionContextInvalid) return;
     const responseText = normalizeText(node.innerText || node.textContent || "");
     // Require at least 60 chars — avoids analysing partial streaming tokens.
@@ -2487,6 +2577,24 @@
     }
 
     if (decision.action === "BLOCK") {
+      // If the block comes only from the semantic LLM classifier (no deterministic
+      // toxic/harmful URL hit), avoid auto-blurring single words like "thinking".
+      // We keep a visible warning and let the user decide to hide manually.
+      if (llmOnlyHarmfulSignal) {
+        insertResponseNotice(node, {
+          icon: "⚠️",
+          message: __("cs_response_flagged"),
+          color: "#7c2d12",
+          bgColor: "#fff7ed",
+          borderColor: "#fed7aa",
+        });
+        showResponseWarningBanner(node, __("cs_response_warn"), (keepVisible) => {
+          if (!keepVisible) {
+            maskResponseNode(node, __("cs_mask_hidden"));
+          }
+        });
+        return;
+      }
       // Preferred path: blur only the identified sensitive fragments.
       // The rest of the response remains fully readable.
       const surgicalOk = redactResponseNodeSurgically(node, decision.redactions, "BLOCK");
@@ -2642,17 +2750,22 @@
   domObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
   chrome.storage.onChanged?.addListener((changes, areaName) => {
     if (areaName !== "sync") return;
-    if (
-      !changes.guardrailEnabled &&
-      !changes.enabledPlatformIds &&
-      !changes.customDomains &&
-      !changes.userAddedPlatforms
-    ) {
-      return;
+    if (changes.avsRevealBlurred) {
+      avsRevealBlurred = changes.avsRevealBlurred.newValue === true;
+      applyAvsRevealDocumentClass();
     }
-    refreshCurrentSiteConfig().then(() => {
-      scheduleResponseScan();
-    });
+    const shouldRefresh =
+      Boolean(changes.guardrailEnabled) ||
+      Boolean(changes.contentModerationEnabled) ||
+      Boolean(changes.responseModerationEnabled) ||
+      Boolean(changes.enabledPlatformIds) ||
+      Boolean(changes.customDomains) ||
+      Boolean(changes.userAddedPlatforms);
+    if (shouldRefresh) {
+      refreshCurrentSiteConfig().then(() => {
+        scheduleResponseScan();
+      });
+    }
   });
   if (getActiveSiteConfig()) {
     reportSiteSignal("SITE_SELECTED", "Guardrail active for this host.").catch(() => {});

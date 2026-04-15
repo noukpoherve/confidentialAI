@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from functools import lru_cache
 
 from app.core.detectors import (
@@ -9,6 +10,7 @@ from app.core.detectors import (
     build_url_protection_patterns,
     detect_sensitive_content,
 )
+from app.core.config import settings
 from app.core.policy_engine import (
     PolicyDecision,
     _build_detections,
@@ -20,72 +22,18 @@ from app.core.user_store import get_user_store
 
 logger = logging.getLogger(__name__)
 
-ENGLISH_VERBS = frozenset(
-    {
-        "generate",
-        "create",
-        "update",
-        "delete",
-        "get",
-        "post",
-        "put",
-        "send",
-        "receive",
-        "process",
-        "analyze",
-        "check",
-        "validate",
-        "run",
-        "execute",
-        "show",
-        "display",
-        "find",
-        "search",
-        "list",
-        "add",
-        "remove",
-        "set",
-        "reset",
-        "load",
-        "save",
-        "import",
-        "export",
-        "fetch",
-        "build",
-        "deploy",
-    }
-)
 
-FRENCH_VERBS = frozenset(
-    {
-        "générer",
-        "créer",
-        "mettre",
-        "supprimer",
-        "obtenir",
-        "envoyer",
-        "recevoir",
-        "traiter",
-        "analyser",
-        "vérifier",
-        "valider",
-        "exécuter",
-        "afficher",
-        "trouver",
-        "chercher",
-        "ajouter",
-        "retirer",
-        "définir",
-        "charger",
-        "sauvegarder",
-    }
-)
+def _dev_debug_enabled() -> bool:
+    return settings.app_env in {"dev", "development", "local"}
 
-# Prefer large models when installed; fall back to sm so NER still runs (lg is often missing locally).
-_FR_NER_MODELS = ("fr_core_news_lg", "fr_core_news_md", "fr_core_news_sm")
-_EN_NER_MODELS = ("en_core_web_lg", "en_core_web_md", "en_core_web_sm")
 
-logger = logging.getLogger(__name__)
+def _debug_person_filter(reason: str, text: str, label: str | None = None) -> None:
+    if not _dev_debug_enabled():
+        return
+    if label:
+        logger.debug("[spaCy PERSON filter] %s | label=%s | text=%r", reason, label, text)
+    else:
+        logger.debug("[spaCy PERSON filter] %s | text=%r", reason, text)
 
 ENGLISH_VERBS = frozenset(
     {
@@ -145,6 +93,24 @@ FRENCH_VERBS = frozenset(
         "définir",
         "charger",
         "sauvegarder",
+    }
+)
+
+# Tokens commonly found in insults/profanity that must never be interpreted as person names.
+PROFANITY_TOKENS = frozenset(
+    {
+        "fuck",
+        "fucking",
+        "shit",
+        "bitch",
+        "asshole",
+        "bastard",
+        "foutre",
+        "merde",
+        "con",
+        "connard",
+        "salope",
+        "pute",
     }
 )
 
@@ -230,17 +196,32 @@ def _reject_per_person_entity(ent, prompt: str) -> bool:
     """True → skip this PER / PERSON entity (false positive heuristics)."""
     text = ent.text.strip()
     tl = text.lower()
+    words = [w for w in re.split(r"\s+", text) if w]
     if tl in ENGLISH_VERBS | FRENCH_VERBS:
+        _debug_person_filter("reject: verb-like token", text, getattr(ent, "label_", None))
+        return True
+    if any(w.lower() in PROFANITY_TOKENS for w in words):
+        _debug_person_filter("reject: profanity token", text, getattr(ent, "label_", None))
+        return True
+    # PERSON entities are expected to contain at least one capitalized token.
+    # Lowercase chunks such as "fuck you" should be rejected as false positives.
+    if not any((w[:1].isupper() and any(c.isalpha() for c in w)) for w in words):
+        _debug_person_filter("reject: no capitalized token", text, getattr(ent, "label_", None))
         return True
     if len(text.split()) < 2:
         if ent.start == 0:
+            _debug_person_filter("reject: single token at sentence start", text, getattr(ent, "label_", None))
             return True
         if ent.start_char >= 2 and prompt[ent.start_char - 2] in ".!?\n":
+            _debug_person_filter("reject: single token after punctuation", text, getattr(ent, "label_", None))
             return True
     if text.isupper():
+        _debug_person_filter("reject: all uppercase", text, getattr(ent, "label_", None))
         return True
     if "_" in text or "-" in text:
+        _debug_person_filter("reject: contains underscore/hyphen", text, getattr(ent, "label_", None))
         return True
+    _debug_person_filter("accept", text, getattr(ent, "label_", None))
     return False
 
 
@@ -312,151 +293,127 @@ def _apply_spacy_ner(decision: PolicyDecision, prompt: str) -> PolicyDecision:
     return decision
 
 
-@lru_cache(maxsize=8)
-def _load_spacy_model(model_name: str):
-    import spacy
-    return spacy.load(model_name)
+# ── GLiNER: transformer-based zero-shot NER (optional, fully local) ───────────
+# More accurate than spaCy for person names, addresses, and custom PII types.
+# Install: pip install gliner
+# Model:   urchade/gliner_multi-v2.1  (multilingual, ~300 MB, runs on CPU)
+# Enable:  GLINER_ENABLED=true in your .env
+
+# Entity labels sent to GLiNER — use natural-language strings (zero-shot protocol).
+_GLINER_LABELS: list[str] = [
+    "person name",
+    "location",
+    "organization",
+    "phone number",
+    "email address",
+    "date of birth",
+    "credit card number",
+    "social security number",
+    "passport number",
+    "national identity number",
+    "bank account number",
+    "postal address",
+    "ip address",
+    "salary or financial figure",
+    "medical record or diagnosis",
+]
+
+_GLINER_LABEL_TO_SEMANTIC: dict[str, str] = {
+    "person name": "PERSONNE",
+    "location": "LIEU",
+    "organization": "ORGANISATION",
+    "phone number": "PHONE",
+    "email address": "EMAIL",
+    "date of birth": "DATE_OF_BIRTH",
+    "credit card number": "CREDIT_CARD",
+    "social security number": "SSN",
+    "passport number": "PASSPORT",
+    "national identity number": "NATIONAL_ID",
+    "bank account number": "BANK_ACCOUNT",
+    "postal address": "ADDRESS",
+    "ip address": "IP_ADDRESS",
+    "salary or financial figure": "FINANCIAL_DATA",
+    "medical record or diagnosis": "MEDICAL_DATA",
+}
+
+_GLINER_THRESHOLD = 0.45  # Below this score → skip (reduces false positives)
+_GLINER_MAX_CHARS = 4000  # Truncate to keep inference fast
 
 
-def _nlp_for_ner(lang_code: str):
-    """
-    Return a loaded spaCy pipeline for NER, or None if no model could be loaded.
-    French text → try French models first; other languages → English then French sm as last resort.
-    """
-    use_fr = lang_code == "fr"
-    candidates = _FR_NER_MODELS if use_fr else (*_EN_NER_MODELS, *_FR_NER_MODELS)
-    last_err: Exception | None = None
-    for name in candidates:
-        try:
-            nlp = _load_spacy_model(name)
-            if name != (candidates[0] if use_fr else _EN_NER_MODELS[0]):
-                logger.info("spaCy NER using fallback model %s (preferred lg/md not installed)", name)
-            return nlp
-        except Exception as e:
-            last_err = e
-            continue
-    if last_err:
+@lru_cache(maxsize=1)
+def _load_gliner_model():
+    """Load and cache the GLiNER model. Returns None if not installed/available."""
+    try:
+        from gliner import GLiNER  # type: ignore[import]
+        model = GLiNER.from_pretrained(settings.gliner_model)
+        logger.info("GLiNER model loaded: %s", settings.gliner_model)
+        return model
+    except ImportError:
         logger.warning(
-            "spaCy NER disabled — no usable model (%s). Install: python -m spacy download fr_core_news_sm",
-            last_err,
+            "GLiNER not installed — stronger local NER disabled. "
+            "Install: pip install gliner"
         )
-    return None
+        return None
+    except Exception as exc:
+        logger.warning("GLiNER model load failed (%s) — falling back to spaCy only.", exc)
+        return None
 
 
-def _detect_language_code(text: str) -> str:
-    try:
-        from langdetect import detect
-        if not (text or "").strip():
-            return "en"
-        return detect(text)
-    except Exception:
-        return "en"
-
-
-def _map_spacy_label(label: str) -> str:
-    u = label.upper()
-    if u in ("PER", "PERSON"):
-        return "PERSONNE"
-    if u in ("LOC", "GPE"):
-        return "LIEU"
-    if u == "ORG":
-        return "ORGANISATION"
-    if u == "DATE":
-        return "DATE"
-    if u == "TIME":
-        return "HORAIRE"
-    if u == "MONEY":
-        return "INFORMATION_FINANCIÈRE"
-    if u == "MISC":
-        return "INFORMATION_PERSONNELLE"
-    return "INFORMATION_PERSONNELLE"
-
-
-def _entity_overlaps_regex(ent_text: str, originals: set[str]) -> bool:
-    """True if this span is already covered by a regex redaction (exact or substring)."""
-    t = ent_text.strip()
-    if not t:
-        return True
-    if t in originals:
-        return True
-    for o in originals:
-        if len(o) >= len(t) and t in o:
-            return True
-    return False
-
-
-def _reject_per_person_entity(ent, prompt: str) -> bool:
-    """True → skip this PER / PERSON entity (false positive heuristics)."""
-    text = ent.text.strip()
-    tl = text.lower()
-    if tl in ENGLISH_VERBS | FRENCH_VERBS:
-        return True
-    if len(text.split()) < 2:
-        if ent.start == 0:
-            return True
-        if ent.start_char >= 2 and prompt[ent.start_char - 2] in ".!?\n":
-            return True
-    if text.isupper():
-        return True
-    if "_" in text or "-" in text:
-        return True
-    return False
-
-
-def spacy_detect(doc, prompt: str):
+def _apply_gliner_ner(decision: PolicyDecision, prompt: str) -> PolicyDecision:
     """
-    Yield named entities from a spaCy doc, applying PER/PERSON filters and a minimum length.
+    Optional GLiNER NER pass — runs after spaCy, catches entities spaCy missed.
+
+    GLiNER is a DeBERTa-based zero-shot NER model that understands natural-language
+    entity descriptions (e.g. "credit card number", "date of birth"). It runs fully
+    locally with no external API calls and is significantly more accurate than spaCy
+    for PII types outside the standard NER taxonomy (PERSON/ORG/LOC/DATE).
+
+    Fail-open: any error returns the decision unchanged.
     """
-    for ent in doc.ents:
-        text = ent.text.strip()
-        if len(text) < 4:
-            continue
-        if ent.label_ in ("PER", "PERSON"):
-            if _reject_per_person_entity(ent, prompt):
-                continue
-        yield ent
+    if not settings.gliner_enabled:
+        return decision
 
+    model = _load_gliner_model()
+    if model is None:
+        return decision
 
-def _apply_spacy_ner(decision: PolicyDecision, prompt: str) -> PolicyDecision:
     try:
-        lang = _detect_language_code(prompt)
-        nlp = _nlp_for_ner("fr" if lang == "fr" else "en")
-        if nlp is None:
-            return decision
-        doc = nlp(prompt)
-    except Exception:
+        truncated = prompt[:_GLINER_MAX_CHARS]
+        entities = model.predict_entities(truncated, _GLINER_LABELS, threshold=_GLINER_THRESHOLD)
+    except Exception as exc:
+        logger.debug("GLiNER inference failed: %s", exc)
         return decision
 
     already_covered: set[str] = {
         str(r.get("original", "")) for r in decision.redactions if r.get("original")
     }
-    seen_span: set[tuple[int, int]] = set()
     added = 0
 
-    for ent in spacy_detect(doc, prompt):
-        key = (ent.start_char, ent.end_char)
-        if key in seen_span:
-            continue
-        seen_span.add(key)
+    for ent in entities:
+        text = str(ent.get("text", "")).strip()
+        label = str(ent.get("label", "")).lower()
+        score = float(ent.get("score", 0.0))
 
-        text = ent.text.strip()
+        if not text or len(text) < 3:
+            continue
         if _entity_overlaps_regex(text, already_covered):
             continue
 
-        semantic = _map_spacy_label(ent.label_)
+        semantic = _GLINER_LABEL_TO_SEMANTIC.get(label, "INFORMATION_PERSONNELLE")
         preview = (text[:21] + "...") if len(text) > 24 else text
+
         decision.detections.append(
             {
                 "type": semantic,
                 "valuePreview": preview,
-                "confidence": 0.75,
+                "confidence": round(score, 3),
             }
         )
         decision.redactions.append(
             {
                 "original": text,
                 "replacement": f"[{semantic}]",
-                "reason": f"spaCy NER ({ent.label_}): {semantic}",
+                "reason": f"GLiNER NER ({label}): {semantic}",
             }
         )
         already_covered.add(text)
@@ -466,7 +423,7 @@ def _apply_spacy_ner(decision: PolicyDecision, prompt: str) -> PolicyDecision:
         decision.action = "WARN"
         if decision.risk_score < 40:
             decision.risk_score = 40
-        decision.reasons.append("Named entities detected (spaCy NER).")
+        decision.reasons.append("Named entities detected (GLiNER NER).")
 
     return decision
 
@@ -474,9 +431,16 @@ def _apply_spacy_ner(decision: PolicyDecision, prompt: str) -> PolicyDecision:
 def run_afe(prompt: str, user_consent: bool | None, user_id: str | None = None) -> PolicyDecision:
     """
     AFE (Input Filtering Agent) for prompt-level risk analysis.
-    Delegates to deterministic policy logic, then enriches with spaCy NER for
-    entities not matched by regex (fail-open if NER unavailable).
-    When user_id is set, user-configured protected URLs are matched in the prompt.
+
+    Pipeline:
+    1. Deterministic regex detection (detectors.py).
+    2. User-configured protected URL matching (optional, requires user_id).
+    3. spaCy NER — local multilingual model for PERSON/LOC/ORG/DATE entities.
+    4. GLiNER NER — optional transformer-based zero-shot NER for finer PII
+       (credit cards, SSN, dates of birth, addresses, etc.) — see GLINER_ENABLED.
+
+    All NER layers are fail-open: a missing model or inference error returns the
+    decision from the previous layer unchanged.
     """
     decision = analyze_prompt(prompt=prompt, user_consent=user_consent)
 
@@ -516,7 +480,16 @@ def run_afe(prompt: str, user_consent: bool | None, user_id: str | None = None) 
             suggestions=decision.suggestions,
         )
 
+    # Layer 3 — spaCy NER (always attempted when spacy_enabled)
     try:
-        return _apply_spacy_ner(decision, prompt)
+        decision = _apply_spacy_ner(decision, prompt)
     except Exception:
-        return decision
+        pass
+
+    # Layer 4 — GLiNER NER (only when gliner_enabled=true)
+    try:
+        decision = _apply_gliner_ner(decision, prompt)
+    except Exception:
+        pass
+
+    return decision

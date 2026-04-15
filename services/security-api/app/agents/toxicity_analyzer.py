@@ -21,6 +21,7 @@ Behaviour:
 """
 
 import json
+import re
 
 import httpx
 
@@ -67,6 +68,51 @@ If NO toxic content is detected, respond ONLY with:
 
 # Maximum number of characters sent to the LLM — keep cost and latency low.
 _MAX_CHARS = 1500
+
+_PROFANITY_REPLACEMENTS: dict[str, str] = {
+    "fuck": "that",
+    "fucking": "very",
+    "shit": "this",
+    "bitch": "person",
+    "asshole": "person",
+    "bastard": "person",
+    "merde": "cela",
+    "foutre": "cela",
+    "con": "personne",
+    "connard": "personne",
+    "salope": "personne",
+}
+_PROFANITY_PATTERN = re.compile(
+    r"\b(" + "|".join(re.escape(k) for k in sorted(_PROFANITY_REPLACEMENTS, key=len, reverse=True)) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def _has_toxic_detection(decision: PolicyDecision) -> bool:
+    return any(str(d.get("type", "")).upper() == "TOXIC_LANGUAGE" for d in (decision.detections or []))
+
+
+def _sanitize_toxic_text(text: str) -> str:
+    if not text:
+        return ""
+    cleaned = _PROFANITY_PATTERN.sub(
+        lambda m: _PROFANITY_REPLACEMENTS.get(m.group(1).lower(), "this"),
+        text,
+    )
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def _fallback_suggestions(text: str) -> list[str]:
+    """Generate basic rephrase suggestions when LLM is unavailable."""
+    cleaned = _sanitize_toxic_text(text)
+    if not cleaned:
+        cleaned = "Could we discuss this respectfully?"
+    return [
+        cleaned,
+        "I am frustrated about this. Could we address it constructively?",
+        "Could you help me with this in a respectful way?",
+    ]
 
 
 def _call_toxicity_llm(text: str) -> dict | None:
@@ -131,7 +177,23 @@ def run_toxicity_analyzer(text: str, decision: PolicyDecision) -> PolicyDecision
         return decision
 
     result = _call_toxicity_llm(text)
-    if result is None or not result.get("is_toxic", False):
+    if result is None:
+        # LLM unavailable: if toxicity was already flagged upstream by deterministic
+        # detectors, still provide suggestions so users are never blocked without help.
+        if not _has_toxic_detection(decision):
+            return decision
+        suggestions = _fallback_suggestions(text)
+        new_action = "SUGGEST_REPHRASE" if decision.action == "ALLOW" else decision.action
+        return PolicyDecision(
+            action=new_action,
+            risk_score=decision.risk_score,
+            reasons=list(decision.reasons) + ["[Toxicity] Offensive language detected (fallback suggestions)."],
+            detections=decision.detections,
+            redactions=decision.redactions,
+            created_at=decision.created_at,
+            suggestions=suggestions,
+        )
+    if not result.get("is_toxic", False):
         return decision
 
     severity: str = result.get("severity", "low")

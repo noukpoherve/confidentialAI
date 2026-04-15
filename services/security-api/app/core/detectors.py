@@ -95,6 +95,9 @@ DETECTOR_PATTERNS: dict[str, re.Pattern[str]] = {
         r"|s+a+l+o+p+e+|e+n+c+u+l+[eé]+(?:e)?|n+i+q+u+e+r?"
         r"|s+a+l+a+u+d+|p+u+t+e+|b+[aâ]+t+a+r+d+(?:e)?"
         r"|c+o+u+i+l+l+e+|f+o+u+t+r+e+"
+        # Threat / violent intent (EN + FR) — explicit forms only.
+        r"|i\s+will\s+(?:kill|stab)\s+you"
+        r"|je\s+vais\s+(?:te|vous)\s+(?:tuer|poignarder)"
         r")\b",
         re.UNICODE,
     ),
@@ -231,6 +234,10 @@ def detect_sensitive_content(prompt: str) -> list[DetectorHit]:
         raw_value = match.group(0)
         if REDACTED_PLACEHOLDER_PATTERN.search(raw_value):
             continue
+        # Real-world BIC codes are typically written in uppercase. Requiring
+        # uppercase here removes many false positives from normal prose/usernames.
+        if raw_value != raw_value.upper():
+            continue
         token_upper = raw_value.upper()
         if not _is_plausible_swift_bic(token_upper):
             continue
@@ -269,6 +276,32 @@ def detect_sensitive_content(prompt: str) -> list[DetectorHit]:
         legal_spans.append((s, e))
 
     return hits
+
+
+def apply_redactions(text: str, redactions: list[dict]) -> str:
+    """
+    Apply a list of {original, replacement} redaction entries to *text* in order.
+
+    Longer originals are applied first so that a substring of an already-replaced
+    placeholder does not get replaced again.  The resulting text contains only
+    redaction placeholders in place of the sensitive values — safe to pass to
+    an LLM without exposing real PII.
+    """
+    if not text or not redactions:
+        return text
+    # Sort by length descending to avoid partial overlaps (e.g. replace the full
+    # email before any sub-token of it).
+    ordered = sorted(
+        (r for r in redactions if r.get("original")),
+        key=lambda r: len(str(r["original"])),
+        reverse=True,
+    )
+    result = text
+    for item in ordered:
+        original = str(item["original"])
+        replacement = str(item.get("replacement", "[REDACTED]"))
+        result = result.replace(original, replacement)
+    return result
 
 
 def build_redactions(hits: list[DetectorHit]) -> list[dict[str, str]]:

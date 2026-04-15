@@ -18,6 +18,15 @@ export function middleware(request: NextRequest) {
 
   if (pathnameHasLocale(pathname)) {
     const locale = pathname.split("/")[1] || defaultLocale;
+
+    // Protect /dashboard — redirect to /login when token cookie is absent.
+    if (pathname.includes("/dashboard")) {
+      const token = request.cookies.get("ca_token")?.value;
+      if (!token) {
+        return NextResponse.redirect(new URL(`/${locale}/login`, request.url));
+      }
+    }
+
     const res = NextResponse.next();
     res.headers.set("x-locale", locale);
     return res;

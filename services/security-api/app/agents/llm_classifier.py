@@ -126,22 +126,36 @@ def _to_float(value, fallback: float = 0.7) -> float:
         return fallback
 
 
-def _escalate_decision(decision: PolicyDecision, result: dict, text: str) -> PolicyDecision:
-    sensitive = bool(result.get("sensitive", False))
-    if not sensitive:
+def _apply_llm_escalation(
+    decision: PolicyDecision,
+    result: dict,
+    text: str,
+    *,
+    flag_key: str,
+    detection_type: str,
+    reason_prefix: str,
+    categories_label: str,
+    default_category: str,
+) -> PolicyDecision:
+    """
+    Shared escalation logic for both prompt-privacy and response-moral LLM classifier paths.
+    Mutates and returns the decision with updated action, risk_score, reasons, detections,
+    and redactions derived from LLM-identified fragments.
+    """
+    if not bool(result.get(flag_key, False)):
         return decision
 
     severity = str(result.get("severity", "medium")).lower()
     confidence = max(0.0, min(1.0, _to_float(result.get("confidence"), 0.7)))
-    reason = str(result.get("reason", "LLM classifier flagged potentially sensitive content.")).strip()
+    reason = str(result.get("reason", f"{reason_prefix} flagged potentially sensitive content.")).strip()
     categories = result.get("categories", [])
     if not isinstance(categories, list):
         categories = []
 
-    decision.reasons.append(f"LLM classifier: {reason}")
+    decision.reasons.append(f"{reason_prefix}: {reason}")
     decision.detections.append(
         {
-            "type": "LLM_SENSITIVE",
+            "type": detection_type,
             "valuePreview": (text[:21] + "...") if len(text) > 24 else text,
             "confidence": confidence,
         }
@@ -160,76 +174,14 @@ def _escalate_decision(decision: PolicyDecision, result: dict, text: str) -> Pol
             decision.action = "ANONYMIZE"
 
     if categories:
-        decision.reasons.append(f"LLM categories: {', '.join(str(c) for c in categories[:6])}")
+        decision.reasons.append(f"{categories_label}: {', '.join(str(c) for c in categories[:6])}")
 
-    # ── Build redactions from LLM-identified fragments ────────────────────────
-    # The regex layer may not have matched anything (e.g. PII_COMBINATION,
-    # CONFIDENTIAL_BUSINESS). The LLM returns exact substrings so we can
-    # compute precise redactions and feed them back to the client for
-    # auto-anonymization.
+    # Build redactions from LLM-identified fragments.
+    # The regex layer may not have matched anything (e.g. PII_COMBINATION, CONFIDENTIAL_BUSINESS).
+    # The LLM returns exact substrings so we can compute precise redactions for auto-anonymization.
     fragments = result.get("fragments", [])
     if isinstance(fragments, list):
-        category_label = categories[0] if categories else "LLM_DETECTED"
-        for fragment in fragments:
-            fragment = str(fragment).strip()
-            # Only add if the fragment actually appears verbatim in the text and
-            # has not already been scheduled for redaction by the regex layer.
-            already_covered = any(
-                r.get("original") == fragment for r in decision.redactions
-            )
-            if fragment and fragment in text and not already_covered:
-                decision.redactions.append(
-                    {
-                        "original": fragment,
-                        "replacement": f"[REDACTED_{category_label.upper().replace(' ', '_')}]",
-                        "reason": f"LLM classifier identified sensitive fragment: {category_label}",
-                    }
-                )
-
-    return decision
-
-
-def _escalate_response_moral_decision(decision: PolicyDecision, result: dict, text: str) -> PolicyDecision:
-    harmful = bool(result.get("harmful", False))
-    if not harmful:
-        return decision
-
-    severity = str(result.get("severity", "medium")).lower()
-    confidence = max(0.0, min(1.0, _to_float(result.get("confidence"), 0.7)))
-    reason = str(
-        result.get("reason", "LLM moral classifier flagged potentially harmful model output.")
-    ).strip()
-    categories = result.get("categories", [])
-    if not isinstance(categories, list):
-        categories = []
-
-    decision.reasons.append(f"LLM moral classifier: {reason}")
-    decision.detections.append(
-        {
-            "type": "LLM_HARMFUL_CONTENT",
-            "valuePreview": (text[:21] + "...") if len(text) > 24 else text,
-            "confidence": confidence,
-        }
-    )
-
-    if severity == "high":
-        decision.risk_score = max(decision.risk_score, 75)
-        decision.action = "BLOCK"
-    elif severity == "medium":
-        decision.risk_score = max(decision.risk_score, 45)
-        if decision.action in {"ALLOW", "ANONYMIZE"}:
-            decision.action = "WARN"
-    else:
-        decision.risk_score = max(decision.risk_score, 20)
-        if decision.action == "ALLOW":
-            decision.action = "ANONYMIZE"
-
-    if categories:
-        decision.reasons.append(f"LLM moral categories: {', '.join(str(c) for c in categories[:6])}")
-
-    fragments = result.get("fragments", [])
-    if isinstance(fragments, list):
-        category_label = categories[0] if categories else "HARMFUL_CONTENT"
+        category_label = categories[0] if categories else default_category
         for fragment in fragments:
             fragment = str(fragment).strip()
             already_covered = any(r.get("original") == fragment for r in decision.redactions)
@@ -238,11 +190,33 @@ def _escalate_response_moral_decision(decision: PolicyDecision, result: dict, te
                     {
                         "original": fragment,
                         "replacement": f"[REDACTED_{str(category_label).upper().replace(' ', '_')}]",
-                        "reason": f"LLM moral classifier identified fragment: {category_label}",
+                        "reason": f"{reason_prefix} identified sensitive fragment: {category_label}",
                     }
                 )
 
     return decision
+
+
+def _escalate_decision(decision: PolicyDecision, result: dict, text: str) -> PolicyDecision:
+    return _apply_llm_escalation(
+        decision, result, text,
+        flag_key="sensitive",
+        detection_type="LLM_SENSITIVE",
+        reason_prefix="LLM classifier",
+        categories_label="LLM categories",
+        default_category="LLM_DETECTED",
+    )
+
+
+def _escalate_response_moral_decision(decision: PolicyDecision, result: dict, text: str) -> PolicyDecision:
+    return _apply_llm_escalation(
+        decision, result, text,
+        flag_key="harmful",
+        detection_type="LLM_HARMFUL_CONTENT",
+        reason_prefix="LLM moral classifier",
+        categories_label="LLM moral categories",
+        default_category="HARMFUL_CONTENT",
+    )
 
 
 def run_llm_classifier(

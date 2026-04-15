@@ -97,9 +97,9 @@ def _response_llm_classifier_node(state: ResponseGraphState) -> ResponseGraphSta
     return {"decision": decision, "visited": [*state.get("visited", []), "llm_classifier"]}
 
 
-def _route_prompt_after_ac(state: PromptGraphState) -> str:
+def _route_after_ac(state: PromptGraphState | ResponseGraphState) -> str:
     """
-    Conditional routing after the Arbitration Controller.
+    Conditional routing after the Arbitration Controller (shared by prompt and response pipelines).
 
     Skip the toxicity analyzer when:
     - The feature is disabled in settings.
@@ -116,14 +116,9 @@ def _route_prompt_after_ac(state: PromptGraphState) -> str:
     return "toxicity_analyzer"
 
 
-def _route_response_after_ac(state: ResponseGraphState) -> str:
-    """Same conditional routing logic for the response pipeline."""
-    if not settings.toxicity_analyzer_enabled:
-        return "end"
-    decision = state.get("decision")
-    if decision and decision.action == "BLOCK":
-        return "end"
-    return "toxicity_analyzer"
+# Typed aliases so add_conditional_edges receives the exact state type it expects.
+_route_prompt_after_ac = _route_after_ac
+_route_response_after_ac = _route_after_ac
 
 
 def _build_prompt_graph():

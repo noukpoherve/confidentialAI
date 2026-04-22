@@ -35,3 +35,4 @@ logs/
 .env.local
 .env.*.local
 services/security-api/.env
+.vercel

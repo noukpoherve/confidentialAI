@@ -1,0 +1,145 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# CI — Continuous Integration
+# Runs on every push or Pull Request.
+# Verifies that code is correct BEFORE it can be merged into main.
+# ══════════════════════════════════════════════════════════════════════════════
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]           # Every push on any branch
+  pull_request:
+    branches: [main, develop]  # PRs targeting main or develop
+
+jobs:
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # JOB 1 : Python API tests (security-api)
+  # ────────────────────────────────────────────────────────────────────────────
+  test-api:
+    name: "Test API (Python)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: pip install uv
+
+      # Cache dependencies to speed up subsequent runs
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: services/security-api/.venv
+          key: uv-${{ runner.os }}-${{ hashFiles('services/security-api/uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
+
+      - name: Install dependencies
+        working-directory: services/security-api
+        run: |
+          uv venv .venv
+          uv pip install --python .venv/bin/python -r pyproject.toml
+          uv pip install --python .venv/bin/python pytest
+
+      - name: Run pytest
+        working-directory: services/security-api
+        env:
+          # Dummy values for CI — not real credentials
+          ENVIRONMENT: test
+          MONGODB_URL: "mongodb://localhost:27017"
+          JWT_SECRET: "test-secret-for-ci-only"
+        run: |
+          source .venv/bin/activate
+          pytest tests/ -v --tb=short
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # JOB 2 : Next.js dashboard tests (admin-dashboard)
+  # ────────────────────────────────────────────────────────────────────────────
+  test-dashboard:
+    name: "Test Dashboard (Next.js)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/admin-dashboard/package-lock.json
+
+      # Clean install based on package-lock.json
+      - name: Install dependencies
+        working-directory: apps/admin-dashboard
+        run: npm ci
+
+      # Verify TypeScript compiles without errors
+      - name: Type check & build
+        working-directory: apps/admin-dashboard
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: "http://localhost:8080"
+
+      - name: Lint
+        working-directory: apps/admin-dashboard
+        run: npm run lint
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # JOB 3 : Browser extension tests
+  # ────────────────────────────────────────────────────────────────────────────
+  test-extension:
+    name: "Test Extension (Browser)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/browser-extension/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/browser-extension
+        run: npm ci
+
+      # Run Vitest in non-interactive mode (no watch)
+      - name: Run Vitest tests
+        working-directory: apps/browser-extension
+        run: npm test -- --run
+
+      # build:extensions:chrome already compiles CSS + injects production env
+      - name: Build extension (Chrome, production)
+        working-directory: apps/browser-extension
+        run: npm run build:extensions:chrome
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # JOB 4 : Final gate — fails if any previous job failed
+  # ────────────────────────────────────────────────────────────────────────────
+  ci-success:
+    name: "CI Passed"
+    runs-on: ubuntu-latest
+    needs: [test-api, test-dashboard, test-extension]
+    if: always()
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [[ "${{ needs.test-api.result }}" == "failure" || \
+                "${{ needs.test-dashboard.result }}" == "failure" || \
+                "${{ needs.test-extension.result }}" == "failure" ]]; then
+            echo "One or more tests failed."
+            exit 1
+          fi
+          echo "All tests passed."

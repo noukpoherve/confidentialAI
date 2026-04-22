@@ -25,12 +25,23 @@ Chrome MV3 extension that intercepts prompts on AI platforms.
   - emits site-level failure/signal events to backend
   - helps admin identify platforms where detection failed and improve selectors
 
+## Backend URL auto-detection
+
+The extension detects its install type at startup via `chrome.management.getSelf()`:
+
+| Install type | API base URL |
+|---|---|
+| `development` (unpacked) | `http://localhost:8080` |
+| `normal` (packed / CRX) | `https://confidentialai.koyeb.app` |
+
+The **Backend URL** section in the options page is automatically hidden in production installs. Developers see it and can override the default.
+
 ## Local installation
 
 1. Open `chrome://extensions`
 2. Enable Developer Mode
 3. Load `apps/browser-extension` with "Load unpacked"
-4. Open extension options and configure the API URL
+4. Open extension options — the Backend URL section is visible in dev mode; set it to `http://localhost:8080` if needed
 5. Select the platforms/domains where guardrail should apply
 
 ## Key files

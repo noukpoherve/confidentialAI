@@ -1,11 +1,10 @@
-# Exclude these files from the Docker build context (speeds up the build)
 .venv/
 __pycache__/
-*.pyc
-*.pyo
-*.egg-info/
+*.py[cod]
 .pytest_cache/
 tests/
+logs/
+*.log
 .env
 .env.*
 *.md

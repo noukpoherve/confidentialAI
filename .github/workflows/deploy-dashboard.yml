@@ -59,18 +59,15 @@ jobs:
             # Preview deployment: unique URL for each PR
             echo "Deploying Preview..."
             DEPLOY_URL=$(vercel deploy --token=$VERCEL_TOKEN 2>&1 | tail -1)
-            echo "Preview URL: $DEPLOY_URL"
           else
             # Production deployment: main branch only
             echo "Deploying to Production..."
             DEPLOY_URL=$(vercel deploy --prod --token=$VERCEL_TOKEN 2>&1 | tail -1)
-            echo "Production URL: $DEPLOY_URL"
           fi
           echo "DEPLOY_URL=$DEPLOY_URL" >> $GITHUB_ENV
 
       - name: Deployment summary
         run: |
           echo "## Dashboard Deployed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **URL:** ${{ env.DEPLOY_URL }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Type:** ${{ github.event_name == 'pull_request' && 'Preview' || 'Production' }}" >> $GITHUB_STEP_SUMMARY

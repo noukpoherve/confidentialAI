@@ -26,8 +26,13 @@ coverage/
 # Localized docs kept out of Git
 README.fr.md
 
+# Local development logs (never commit)
+logs/
+*.log
+
 # Environment variables — NEVER commit secrets
 .env
 .env.local
 .env.*.local
 services/security-api/.env
+.vercel

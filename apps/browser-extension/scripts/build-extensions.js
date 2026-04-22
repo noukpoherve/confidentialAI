@@ -1,316 +1,156 @@
 #!/usr/bin/env node
 /**
- * build-extensions.js
- *
- * Generates browser-specific extension packages.
+ * Build script for the browser extension.
  *
  * Usage:
- *   node scripts/build-extensions.js [--target chrome,edge,opera,firefox,safari] [--skip-css]
+ *   node scripts/build-extensions.js --browser chrome
+ *   node scripts/build-extensions.js --browser firefox
+ *   node scripts/build-extensions.js --browser edge
+ *   node scripts/build-extensions.js --browser all        (builds all browsers)
  *
- * Output (apps/browser-extension/dist/):
- *   confidential-agent-chrome-v0.1.1.zip
- *   confidential-agent-edge-v0.1.1.zip
- *   confidential-agent-opera-v0.1.1.zip
- *   confidential-agent-firefox-v0.1.1.zip
- *   confidential-agent-safari-v0.1.1/      ← folder, see Safari note below
+ * Flags:
+ *   --env production    Injects __CONFIDENTIAL_AGENT_BUILD__ = "production"
+ *                       so the extension uses the Koyeb API URL instead of localhost.
+ *   --env development   (default) Uses localhost:8080
  *
- * Safari note:
- *   Safari Web Extensions require an Xcode wrapper. After this script runs,
- *   convert the generated folder with:
- *     xcrun safari-web-extension-converter dist/confidential-agent-safari-v<version>
+ * Examples:
+ *   node scripts/build-extensions.js --browser chrome --env production
+ *   node scripts/build-extensions.js --browser all --env production
  */
 
-'use strict';
+import { cpSync, mkdirSync, rmSync, readFileSync, writeFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
-const fs   = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(__dirname, "..");
 
-// ── Paths ─────────────────────────────────────────────────────────────────────
-
-const ROOT = path.resolve(__dirname, '..');
-const DIST = path.join(ROOT, 'dist');
-
-// ── Parse CLI args ────────────────────────────────────────────────────────────
+// ── Parse CLI arguments ───────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
-const _targetIdx = args.indexOf('--target');
-const targetArg = args.find(a => a.startsWith('--target='))?.split('=')[1]
-               ?? (_targetIdx !== -1 ? args[_targetIdx + 1] : undefined);
-const skipCss   = args.includes('--skip-css');
 
-const ALL_TARGETS = ['chrome', 'edge', 'opera', 'firefox', 'safari'];
-const targets = targetArg
-  ? targetArg.split(',').map(t => t.trim().toLowerCase())
-  : ALL_TARGETS;
+function getArg(flag) {
+  const i = args.indexOf(flag);
+  return i !== -1 ? args[i + 1] : null;
+}
 
-const invalid = targets.filter(t => !ALL_TARGETS.includes(t));
-if (invalid.length) {
-  console.error(`Unknown target(s): ${invalid.join(', ')}`);
-  console.error(`Valid: ${ALL_TARGETS.join(', ')}`);
+const ENV = getArg("--env") ?? "development";
+const BROWSER_ARG = getArg("--browser") ?? "chrome";
+const IS_PRODUCTION = ENV === "production";
+
+const ALL_BROWSERS = ["chrome", "firefox", "edge", "opera", "safari"];
+const BROWSERS = BROWSER_ARG === "all" ? ALL_BROWSERS : [BROWSER_ARG];
+
+if (!["production", "development"].includes(ENV)) {
+  console.error(`Unknown --env value: "${ENV}". Use "production" or "development".`);
   process.exit(1);
 }
 
-// ── Load base manifest ────────────────────────────────────────────────────────
+console.log(`\nBuild config:`);
+console.log(`  env      : ${ENV}`);
+console.log(`  browsers : ${BROWSERS.join(", ")}`);
+console.log(`  api      : ${IS_PRODUCTION ? "https://confidentialai.koyeb.app" : "http://localhost:8080"}`);
+console.log("");
 
-const baseManifest = JSON.parse(
-  fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8')
-);
-const VERSION = baseManifest.version;
+// ── Files to copy from source ─────────────────────────────────────────────────
+// Add any new HTML, asset or source file here.
 
-// ── Files included in every build ─────────────────────────────────────────────
-// Directories are copied recursively; the src/ dir excludes test/input files.
-
-const INCLUDE_FILES = [
-  'popup.html',
-  'options.html',
-  'tailwind.output.css',
+const STATIC_FILES = [
+  "manifest.json",
+  "options.html",
+  "popup.html",
+  "tailwind.output.css",
 ];
-const INCLUDE_DIRS = [
-  '_locales',
-  'icons',
+
+const STATIC_DIRS = [
+  "icons",
+  "_locales",
+  "src",
 ];
-// Files inside src/ to exclude (test artefacts, CSS source)
-const SRC_EXCLUDE = ['.test.', '.spec.', 'input.css', 'vitest.'];
 
-// ── Manifest builders ─────────────────────────────────────────────────────────
+// ── Per-browser manifest patches ─────────────────────────────────────────────
+// Some browsers need small adjustments to the base manifest.json.
 
-function chromeLike(base) {
-  return JSON.parse(JSON.stringify(base));
-}
-
-function firefoxManifest(base) {
-  const m = JSON.parse(JSON.stringify(base));
-
-  // ── MV2 ───────────────────────────────────────────────────────────────────
-  m.manifest_version = 2;
-
-  // Required gecko ID for Firefox store submission
-  m.browser_specific_settings = {
-    gecko: {
-      id: 'guardrail@confidentialagent.com',
-      strict_min_version: '68.0',
+const MANIFEST_PATCHES = {
+  firefox: (manifest) => ({
+    ...manifest,
+    // Firefox requires a unique extension ID for AMO (addons.mozilla.org) submission
+    browser_specific_settings: {
+      gecko: {
+        id: "confidential-agent@tnbsoftlab.com",
+        strict_min_version: "109.0",
+      },
     },
-  };
-
-  // MV2: action → browser_action
-  if (m.action) {
-    m.browser_action = { ...m.action };
-    delete m.action;
-  }
-
-  // MV2: background.service_worker → background.scripts[]
-  // (drop "type": "module" — MV2 background scripts don't use it)
-  if (m.background?.service_worker) {
-    m.background = { scripts: [m.background.service_worker] };
-  }
-
-  // MV2: host_permissions → merged into permissions
-  //      "management" is not available in Firefox MV2 — remove it
-  //      (options.js already handles its absence gracefully)
-  const hostPerms = Array.isArray(m.host_permissions) ? m.host_permissions : [];
-  const basePerms = (m.permissions || []).filter(p => p !== 'management');
-  m.permissions = [...basePerms, ...hostPerms];
-  delete m.host_permissions;
-
-  // MV2: optional_host_permissions → optional_permissions
-  if (m.optional_host_permissions) {
-    m.optional_permissions = m.optional_host_permissions;
-    delete m.optional_host_permissions;
-  }
-
-  // MV2: options_page → options_ui (opens in a full tab, required by Firefox)
-  if (m.options_page) {
-    m.options_ui = { page: m.options_page, open_in_tab: true };
-    delete m.options_page;
-  }
-
-  return m;
-}
-
-function safariManifest(base) {
-  // Safari MV3 — mostly identical to Chrome.
-  // xcrun safari-web-extension-converter will wrap this into an Xcode project.
-  return JSON.parse(JSON.stringify(base));
-}
-
-// ── Target definitions ────────────────────────────────────────────────────────
-
-const TARGET_DEFS = {
-  chrome:  { label: 'Chrome',  zip: true,  manifest: chromeLike  },
-  edge:    { label: 'Edge',    zip: true,  manifest: chromeLike  },
-  opera:   { label: 'Opera',   zip: true,  manifest: chromeLike  },
-  firefox: { label: 'Firefox', zip: true,  manifest: firefoxManifest },
-  safari:  { label: 'Safari',  zip: false, manifest: safariManifest  },
+  }),
+  // Chrome, Edge, Opera, Safari: no patch needed
+  chrome: (m) => m,
+  edge:   (m) => m,
+  opera:  (m) => m,
+  safari: (m) => m,
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Build function ────────────────────────────────────────────────────────────
 
-function log(msg)  { process.stdout.write(`  ${msg}\n`); }
-function ok(msg)   { process.stdout.write(`  ✓ ${msg}\n`); }
-function warn(msg) { process.stdout.write(`  ⚠ ${msg}\n`); }
+function build(browser) {
+  const outDir = join(ROOT, "dist", browser);
 
-function rimraf(dir) {
-  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
-}
+  // 1. Clean output directory
+  rmSync(outDir, { recursive: true, force: true });
+  mkdirSync(outDir, { recursive: true });
+  console.log(`[${browser}] Cleaned ${outDir}`);
 
-/** Copy a file, creating parent dirs as needed. */
-function copyFile(src, dest) {
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.copyFileSync(src, dest);
-}
-
-/** Recursively copy a directory, with optional filename filter. */
-function copyDir(srcDir, destDir, filter = () => true) {
-  if (!fs.existsSync(srcDir)) return;
-  fs.mkdirSync(destDir, { recursive: true });
-  for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
-    const srcPath  = path.join(srcDir, entry.name);
-    const destPath = path.join(destDir, entry.name);
-    if (entry.isDirectory()) {
-      copyDir(srcPath, destPath, filter);
-    } else if (filter(entry.name)) {
-      fs.copyFileSync(srcPath, destPath);
-    }
+  // 2. Copy static files
+  for (const file of STATIC_FILES) {
+    if (file === "manifest.json") continue; // handled separately below
+    cpSync(join(ROOT, file), join(outDir, file), { errorOnExist: false });
   }
-}
 
-/** Stage all extension files into a temp directory. */
-function stageFiles(stagingDir, manifestObj) {
-  fs.mkdirSync(stagingDir, { recursive: true });
+  // 3. Copy static directories
+  for (const dir of STATIC_DIRS) {
+    if (dir === "src") continue; // handled separately below
+    cpSync(join(ROOT, dir), join(outDir, dir), { recursive: true });
+  }
 
-  // manifest.json — browser-specific version
-  fs.writeFileSync(
-    path.join(stagingDir, 'manifest.json'),
-    JSON.stringify(manifestObj, null, 2) + '\n',
-    'utf8'
+  // 4. Copy src/ files, then inject the build environment into background.js
+  const srcOut = join(outDir, "src");
+  mkdirSync(srcOut, { recursive: true });
+  cpSync(join(ROOT, "src"), srcOut, { recursive: true });
+
+  // Inject __CONFIDENTIAL_AGENT_BUILD__ at the very top of background.js.
+  // The existing code already reads this global to decide which API URL to use:
+  //   if (override === "production" || override === "development") { ... }
+  const bgPath = join(srcOut, "background.js");
+  const bgOriginal = readFileSync(bgPath, "utf8");
+  const injected = `globalThis.__CONFIDENTIAL_AGENT_BUILD__ = "${ENV}";\n\n${bgOriginal}`;
+  writeFileSync(bgPath, injected, "utf8");
+  console.log(`[${browser}] Injected __CONFIDENTIAL_AGENT_BUILD__ = "${ENV}" into background.js`);
+
+  // 5. Write patched manifest.json
+  const baseManifest = JSON.parse(readFileSync(join(ROOT, "manifest.json"), "utf8"));
+  const patch = MANIFEST_PATCHES[browser] ?? ((m) => m);
+  const finalManifest = patch(baseManifest);
+
+  // In development builds: keep localhost host permissions.
+  // In production builds: remove localhost (cleaner, smaller attack surface).
+  if (IS_PRODUCTION) {
+    finalManifest.host_permissions = finalManifest.host_permissions.filter(
+      (h) => !h.includes("localhost") && !h.includes("127.0.0.1")
+    );
+  }
+
+  writeFileSync(
+    join(outDir, "manifest.json"),
+    JSON.stringify(finalManifest, null, 2),
+    "utf8"
   );
-
-  // Flat files
-  for (const file of INCLUDE_FILES) {
-    const src = path.join(ROOT, file);
-    if (fs.existsSync(src)) {
-      copyFile(src, path.join(stagingDir, file));
-    } else {
-      warn(`${file} not found — skipping`);
-    }
-  }
-
-  // Directories
-  for (const dir of INCLUDE_DIRS) {
-    copyDir(path.join(ROOT, dir), path.join(stagingDir, dir));
-  }
-
-  // src/ — exclude test/build artefacts
-  copyDir(
-    path.join(ROOT, 'src'),
-    path.join(stagingDir, 'src'),
-    name => !SRC_EXCLUDE.some(pat => name.includes(pat))
-  );
+  console.log(`[${browser}] manifest.json written`);
+  console.log(`[${browser}] Build complete → ${outDir}\n`);
 }
 
-/** Create a ZIP from a staged directory. Returns the zip path. */
-function zipStaging(stagingDir, zipPath) {
-  rimraf(zipPath);
-  // Run zip from inside the staging dir so paths inside the archive are relative
-  execSync(`zip -r "${zipPath}" .`, { cwd: stagingDir, stdio: 'pipe' });
-  return zipPath;
+// ── Run ───────────────────────────────────────────────────────────────────────
+
+for (const browser of BROWSERS) {
+  build(browser);
 }
 
-/** Human-readable file size. */
-function humanSize(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
-
-// ── Build CSS if needed ───────────────────────────────────────────────────────
-
-function ensureCss() {
-  const cssOut = path.join(ROOT, 'tailwind.output.css');
-  if (skipCss) {
-    if (!fs.existsSync(cssOut)) {
-      console.error('tailwind.output.css not found. Run without --skip-css first.');
-      process.exit(1);
-    }
-    warn('--skip-css: reusing existing tailwind.output.css');
-    return;
-  }
-  log('Building Tailwind CSS…');
-  execSync('npm run build:css', { cwd: ROOT, stdio: 'pipe' });
-  ok('CSS built');
-}
-
-// ── Main ──────────────────────────────────────────────────────────────────────
-
-function main() {
-  console.log(`\nConfidential Agent — Extension builder  v${VERSION}`);
-  console.log(`Targets: ${targets.join(', ')}\n`);
-
-  fs.mkdirSync(DIST, { recursive: true });
-  ensureCss();
-  console.log('');
-
-  const results = [];
-
-  for (const target of targets) {
-    const def = TARGET_DEFS[target];
-    console.log(`── ${def.label}`);
-
-    const name      = `confidential-agent-${target}-v${VERSION}`;
-    const stagingDir = path.join(DIST, `.staging-${target}`);
-
-    try {
-      rimraf(stagingDir);
-
-      log('Staging files…');
-      stageFiles(stagingDir, def.manifest(baseManifest));
-
-      if (def.zip) {
-        const zipPath = path.join(DIST, `${name}.zip`);
-        log('Zipping…');
-        zipStaging(stagingDir, zipPath);
-        rimraf(stagingDir);
-        const size = humanSize(fs.statSync(zipPath).size);
-        ok(`${name}.zip  (${size})`);
-        results.push({ browser: def.label, file: path.relative(path.join(ROOT, '..'), zipPath), size });
-      } else {
-        // Safari: keep the folder unzipped, ready for xcrun
-        const outDir = path.join(DIST, name);
-        rimraf(outDir);
-        fs.renameSync(stagingDir, outDir);
-        ok(`${name}/  (folder — ready for xcrun)`);
-        results.push({ browser: def.label, file: path.relative(path.join(ROOT, '..'), outDir) + '/', size: '—' });
-      }
-    } catch (err) {
-      rimraf(stagingDir);
-      console.error(`  ✗ ${def.label} failed: ${err.message}`);
-      results.push({ browser: def.label, file: 'FAILED', size: '' });
-    }
-
-    console.log('');
-  }
-
-  // ── Summary ───────────────────────────────────────────────────────────────
-
-  console.log('── Summary ──────────────────────────────');
-  const colW = Math.max(...results.map(r => r.browser.length)) + 2;
-  for (const r of results) {
-    const browser = r.browser.padEnd(colW);
-    const size = r.size ? `  (${r.size})` : '';
-    console.log(`  ${browser}→  ${r.file}${size}`);
-  }
-
-  if (targets.includes('safari')) {
-    console.log(`
-── Safari next step ──────────────────────
-  xcrun safari-web-extension-converter \\
-    apps/browser-extension/dist/confidential-agent-safari-v${VERSION}
-  Then open the generated Xcode project and build.
-`);
-  }
-
-  console.log('Done.\n');
-}
-
-main();
+console.log("Done.");

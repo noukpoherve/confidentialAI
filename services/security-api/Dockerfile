@@ -1,53 +1,41 @@
-# ─── Stage 1 : builder ────────────────────────────────────────────────────────
-# Install dependencies in an isolated environment using uv
-FROM python:3.11-slim AS builder
+# ── Stage 1: build dependencies with uv ──────────────────────────────────────
+FROM python:3.13-slim AS builder
+
+WORKDIR /app
 
 # Install uv (fast Python package manager)
 RUN pip install --no-cache-dir uv
 
-WORKDIR /app
-
-# Copy dependency files first to leverage Docker layer caching
+# Copy dependency files first — layer cached unless these change
 COPY pyproject.toml uv.lock ./
 
-# Create virtual environment and install dependencies
-RUN uv venv /app/.venv && \
-    uv pip install --python /app/.venv/bin/python --no-cache -r pyproject.toml
+# Install production dependencies into an isolated venv using the lockfile
+# --frozen ensures exact versions from uv.lock (reproducible builds)
+RUN uv sync --frozen --no-dev
 
-# Download spaCy NER model into the venv
-RUN /app/.venv/bin/python -m spacy download en_core_web_sm
+# Download the spaCy model into the venv (not a PyPI package, installed separately)
+RUN .venv/bin/python -m spacy download fr_core_news_sm
 
-# ─── Stage 2 : runtime ────────────────────────────────────────────────────────
-# Lean final image without build tools
-FROM python:3.11-slim AS runtime
-
-# Create a non-root user for security best practices
-RUN groupadd --gid 1001 appgroup && \
-    useradd --uid 1001 --gid appgroup --no-create-home appuser
+# ── Stage 2: minimal runtime image ───────────────────────────────────────────
+FROM python:3.13-slim AS runtime
 
 WORKDIR /app
 
-# Copy only the built venv (not the build tools)
-COPY --from=builder /app/.venv /app/.venv
+# Non-root user for security
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 
-# Copy application source code
-COPY app/ ./app/
+# Copy venv from builder (includes packages + spaCy model)
+COPY --from=builder /app/.venv .venv
 
-# Grant read access to the non-root user
-RUN chown -R appuser:appgroup /app
+# Copy application code
+COPY app/ app/
 
-USER appuser
-
-# Expose the API port
-EXPOSE 8080
-
-# Use the venv and set Python runtime flags
 ENV PATH="/app/.venv/bin:$PATH" \
-    PYTHONPATH="/app" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# Start the server
-# --workers 1: sufficient for Koyeb (scale horizontally when needed)
-# --host 0.0.0.0: listen on all interfaces (required by Koyeb)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+USER appuser
+
+EXPOSE 8080
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

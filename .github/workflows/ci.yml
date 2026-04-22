@@ -8,12 +8,11 @@ name: CI
 
 on:
   push:
-    branches: ["**"]           # Every push on any branch
+    branches: ["**"] # Every push on any branch
   pull_request:
-    branches: [main, develop]  # PRs targeting main or develop
+    branches: [main, develop] # PRs targeting main or develop
 
 jobs:
-
   # ────────────────────────────────────────────────────────────────────────────
   # JOB 1 : Python API tests (security-api)
   # ────────────────────────────────────────────────────────────────────────────
@@ -22,7 +21,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Check out repository code
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -44,21 +42,16 @@ jobs:
 
       - name: Install dependencies
         working-directory: services/security-api
-        run: |
-          uv venv .venv
-          uv pip install --python .venv/bin/python -r pyproject.toml
-          uv pip install --python .venv/bin/python pytest
+        run: uv sync --group dev
 
       - name: Run pytest
         working-directory: services/security-api
         env:
-          # Dummy values for CI — not real credentials
-          ENVIRONMENT: test
-          MONGODB_URL: "mongodb://localhost:27017"
-          JWT_SECRET: "test-secret-for-ci-only"
-        run: |
-          source .venv/bin/activate
-          pytest tests/ -v --tb=short
+          APP_ENV: "test"
+          AUTH_SECRET_KEY: "test-secret-for-ci-only-minimum-32-chars"
+          MONGODB_URI: "mongodb://localhost:27017"
+          SPACY_ENABLED: "false"
+        run: uv run pytest tests/ -v --tb=short
 
   # ────────────────────────────────────────────────────────────────────────────
   # JOB 2 : Next.js dashboard tests (admin-dashboard)
@@ -84,7 +77,7 @@ jobs:
         run: npm ci
 
       # Verify TypeScript compiles without errors
-      - name: Type check
+      - name: Type check & build
         working-directory: apps/admin-dashboard
         run: npm run build
         env:
@@ -121,7 +114,8 @@ jobs:
         working-directory: apps/browser-extension
         run: npm test -- --run
 
-      - name: Build extension (Chrome)
+      # build:extensions:chrome already compiles CSS + injects production env
+      - name: Build extension (Chrome, production)
         working-directory: apps/browser-extension
         run: npm run build:extensions:chrome
 

@@ -17,6 +17,7 @@ dependencies = [
     "spacy>=3.7.0,<4",
     "uvicorn==0.35.0",
     "slowapi>=0.1.9",
+    "sentry-sdk[fastapi]>=2.0.0",
     # GLiNER: optional local transformer NER (install separately — see docs/ARCHITECTURE.md)
     # "gliner>=0.2.0",
 ]

@@ -19,4 +19,18 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Wrap with withSentryConfig only when DSN is configured (= production).
+// In local, no overhead — withSentryConfig is not applied at all.
+const hasSentry = Boolean(process.env.GLITCHTIP_DSN || process.env.NEXT_PUBLIC_GLITCHTIP_DSN);
+
+if (hasSentry) {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { withSentryConfig } = require("@sentry/nextjs");
+  module.exports = withSentryConfig(nextConfig, {
+    silent: true,
+    hideSourceMaps: true,
+    disableLogger: true,
+  });
+} else {
+  module.exports = nextConfig;
+}

@@ -1,10 +1,49 @@
-/** Default hosted API (update if your production URL changes). */
 const PRODUCTION_API_BASE_URL = "https://confidentialai.koyeb.app";
-const LOCAL_API_BASE_URL = "http://localhost:8080";
+const LOCAL_API_BASE_URL      = "http://localhost:8080";
 
+/**
+ * Detects whether the extension runs in production (installed from the store)
+ * or development mode (Load unpacked). Same logic as resolveApiPresetProfile() in options.js.
+ */
+async function _detectInstallEnvironment() {
+  const override = globalThis.__CONFIDENTIAL_AGENT_BUILD__;
+  if (override === "production") return "production";
+  if (override === "development") return "development";
+
+  try {
+    const info = await new Promise((resolve, reject) => {
+      if (!chrome.management?.getSelf) {
+        reject(new Error("management API unavailable"));
+        return;
+      }
+      chrome.management.getSelf((i) => {
+        if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+        else resolve(i);
+      });
+    });
+    // installType "development" = Load unpacked = local mode
+    return info.installType === "development" ? "development" : "production";
+  } catch {
+    // Fail-safe: if detection fails, assume local (safer default)
+    return "development";
+  }
+}
+
+/**
+ * Returns the backend API URL.
+ * Priority:
+ *   1. Custom URL saved by the user in chrome.storage.sync
+ *   2. Auto-detected URL based on install environment (prod → koyeb, dev → localhost)
+ */
 async function getApiBaseUrl() {
   const data = await chrome.storage.sync.get(["apiBaseUrl"]);
-  return (data.apiBaseUrl || LOCAL_API_BASE_URL).replace(/\/+$/, "");
+
+  if (data.apiBaseUrl && data.apiBaseUrl.trim() !== "") {
+    return data.apiBaseUrl.replace(/\/+$/, "");
+  }
+
+  const env = await _detectInstallEnvironment();
+  return env === "production" ? PRODUCTION_API_BASE_URL : LOCAL_API_BASE_URL;
 }
 
 async function getAuthToken() {

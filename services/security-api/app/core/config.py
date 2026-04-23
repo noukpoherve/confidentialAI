@@ -105,6 +105,11 @@ class Settings(BaseModel):
     rate_limit_analyze: str = os.getenv("RATE_LIMIT_ANALYZE", "60/minute")
     rate_limit_validate_response: str = os.getenv("RATE_LIMIT_VALIDATE_RESPONSE", "60/minute")
     rate_limit_analyze_image: str = os.getenv("RATE_LIMIT_ANALYZE_IMAGE", "20/minute")
+    # ── Error tracking (GlitchTip via Sentry SDK) ─────────────────────────────
+    # Active only if APP_ENV=production AND this variable is set.
+    # In local/dev: logs go to logs/dev.log, no network sends.
+    glitchtip_dsn: str = os.getenv("GLITCHTIP_DSN", "")
+    app_version: str = os.getenv("APP_VERSION", "0.1.0")
 
 
 settings = Settings()

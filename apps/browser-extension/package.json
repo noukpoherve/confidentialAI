@@ -6,7 +6,15 @@
   "scripts": {
     "build:css": "tailwindcss -i src/input.css -o tailwind.output.css --minify",
     "watch:css": "tailwindcss -i src/input.css -o tailwind.output.css --watch",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:extensions": "npm run build:css && node scripts/build-extensions.js --browser all --env production",
+    "build:extensions:chrome": "npm run build:css && node scripts/build-extensions.js --browser chrome --env production",
+    "build:extensions:firefox": "npm run build:css && node scripts/build-extensions.js --browser firefox --env production",
+    "build:extensions:edge": "npm run build:css && node scripts/build-extensions.js --browser edge --env production",
+    "build:extensions:opera": "npm run build:css && node scripts/build-extensions.js --browser opera --env production",
+    "build:extensions:safari": "npm run build:css && node scripts/build-extensions.js --browser safari --env production",
+    "build:dev": "npm run build:css && node scripts/build-extensions.js --browser chrome --env development",
+    "build:dev:all": "npm run build:css && node scripts/build-extensions.js --browser all --env development"
   },
   "devDependencies": {
     "jsdom": "^25.0.1",

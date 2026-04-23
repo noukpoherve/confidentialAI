@@ -1,0 +1,73 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# DEPLOY DASHBOARD → Vercel
+#
+# This workflow deploys the Next.js dashboard to Vercel via CLI.
+# It gives you full control: deploy only after CI tests pass.
+#
+# REQUIRED SECRETS (GitHub → Settings → Secrets and variables → Actions):
+#   - VERCEL_TOKEN      : vercel.com → Settings → Tokens
+#   - VERCEL_ORG_ID     : vercel.com/account → Settings → "Team ID"
+#   - VERCEL_PROJECT_ID : found in .vercel/project.json after running "vercel link"
+#
+# HOW TO GET THESE VALUES:
+#   1. npm i -g vercel
+#   2. cd apps/admin-dashboard && vercel link
+#   3. cat .vercel/project.json
+# ══════════════════════════════════════════════════════════════════════════════
+
+name: Deploy Dashboard to Vercel
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/admin-dashboard/**"
+      - ".github/workflows/deploy-dashboard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/admin-dashboard/**"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: "Deploy to Vercel"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/admin-dashboard/package-lock.json
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Deploy to Vercel
+        working-directory: apps/admin-dashboard
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            # Preview deployment: unique URL for each PR
+            echo "Deploying Preview..."
+            DEPLOY_URL=$(vercel deploy --token=$VERCEL_TOKEN 2>&1 | tail -1)
+          else
+            # Production deployment: main branch only
+            echo "Deploying to Production..."
+            DEPLOY_URL=$(vercel deploy --prod --token=$VERCEL_TOKEN 2>&1 | tail -1)
+          fi
+          echo "DEPLOY_URL=$DEPLOY_URL" >> $GITHUB_ENV
+
+      - name: Deployment summary
+        run: |
+          echo "## Dashboard Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL:** ${{ env.DEPLOY_URL }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Type:** ${{ github.event_name == 'pull_request' && 'Preview' || 'Production' }}" >> $GITHUB_STEP_SUMMARY

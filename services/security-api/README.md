@@ -29,6 +29,35 @@ uv run uvicorn app.main:app --reload --port 8080
 
 The spaCy model adds phrase-based **LEGAL_HR** detection on top of regex. If the model is missing, the API still runs; set `SPACY_ENABLED=false` to skip loading spaCy.
 
+## Run with Docker
+
+```bash
+docker build -t security-api .
+docker run --env-file .env -p 8080:8080 security-api
+```
+
+The multi-stage `Dockerfile` (builder → runtime) installs dependencies with `uv sync --frozen --no-dev`, downloads the spaCy model, and runs as a non-root user (`appuser`). The image exposes port 8080.
+
+## Logging
+
+| Environment | Output |
+|---|---|
+| `dev` / `development` / `local` | Console + rotating file `logs/dev.log` (5 MB, 3 backups) |
+| `production` | Console only (JSON-compatible via uvicorn stdout — collected by the container runtime) |
+
+`APP_ENV` controls the mode (default: `dev`).
+
+## Error tracking (GlitchTip / Sentry)
+
+Error tracking is **only active in production** and only when `GLITCHTIP_DSN` is set.
+
+```
+APP_ENV=production
+GLITCHTIP_DSN=https://<key>@app.glitchtip.com/<project_id>
+```
+
+A DLP filter (`_filter_sensitive_event`) strips authorization headers, request bodies (raw prompts), and any extra field matching sensitive key names before sending an event to GlitchTip. Prompts and API keys are never transmitted.
+
 ## Example request
 
 ```bash
@@ -70,6 +99,19 @@ Relevant variables (see `.env.example`):
 | `EMBEDDING_MODEL` | Default `text-embedding-3-small` |
 | `VECTOR_MATCH_MIN_SCORE` | Minimum cosine similarity to reuse a past decision (default `0.88`) |
 | `QDRANT_PREFER_GRPC` / `QDRANT_GRPC_PORT` | Optional gRPC client instead of HTTP |
+
+## Environment variables (summary)
+
+| Variable | Default | Notes |
+|---|---|---|
+| `APP_ENV` | `dev` | `dev` / `development` / `local` → local mode; `production` → prod mode |
+| `APP_VERSION` | `0.1.0` | Injected by CI/CD (`APP_VERSION=${{ github.ref_name }}`); used in Sentry release tag |
+| `GLITCHTIP_DSN` | _(empty)_ | GlitchTip / Sentry DSN; error tracking inactive when empty |
+| `MONGO_URL` | _(empty)_ | MongoDB connection string; in-memory fallback when absent |
+| `AUTH_SECRET_KEY` | — | JWT signing key |
+| `SPACY_ENABLED` | `true` | Set `false` to skip spaCy loading (faster cold start without LEGAL_HR phrases) |
+
+See `.env.example` for the full list (LLM, Qdrant, Telegram, image moderation).
 
 ## Optional Telegram alerts
 

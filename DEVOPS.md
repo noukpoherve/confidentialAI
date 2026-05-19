@@ -1,283 +1,299 @@
-# Guide DevOps — Confidential Agent
+# DevOps Guide — Confidential Agent
 
-Ce guide explique toute la pipeline DevOps mise en place pour ce projet.
+This guide documents the CI/CD pipeline for this project.
 
 ---
 
-## Vue d'ensemble : C'est quoi une pipeline DevOps ?
+## Overview
 
 ```
-Ton code local
+Local code
      │
      ▼ git push
-GitHub (dépôt)
+GitHub (repository)
      │
-     ▼ déclenche automatiquement
+     ▼ triggers automatically
 GitHub Actions (CI/CD)
      │
-     ├─► Tests (CI)           → vérifie que rien n'est cassé
-     │
-     ├─► Deploy API           → Koyeb (FastAPI)
-     ├─► Deploy Dashboard     → Vercel (Next.js)
-     └─► Build Extension      → artifacts .zip
+     ├─► Frontend job   → lint + test + build dashboard & extension + deploy to Vercel
+     ├─► Backend job    → lint + security scan + test + build Docker image + deploy to Koyeb
+     └─► CI / Release   → CI gate + extension release zips + GitHub Release on tag
 ```
 
-**DevOps = automatiser tout ce qui est répétitif** pour que tu puisses te concentrer sur le code.
+**DevOps = automate everything repetitive** so you can focus on writing code.
 
 ---
 
-## Structure des fichiers créés
+## Workflow files
 
 ```
 confidential-agent/
-├── .github/
-│   └── workflows/
-│       ├── ci.yml                  ← Tests automatiques (tous les composants)
-│       ├── deploy-api.yml          ← Déploie l'API sur Koyeb
-│       ├── deploy-dashboard.yml    ← Déploie le dashboard sur Vercel
-│       └── build-extension.yml    ← Build + package l'extension
-└── services/
-    └── security-api/
-        ├── Dockerfile              ← Comment construire l'image Docker de l'API
-        └── .dockerignore           ← Fichiers à exclure du build Docker
+└── .github/
+    └── workflows/
+        ├── frontend.yml   ← Dashboard (Next.js) + Browser Extension — CI/CD
+        ├── backend.yml    ← Python API (security-api)  — CI/CD
+        └── ci.yml         ← CI gate + release builds + GitHub Release on tag
 ```
+
+Each workflow only triggers when its own files change (monorepo path filters).
 
 ---
 
-## Étape 1 : Configurer les Secrets GitHub
+## Workflow 1 — Frontend
 
-Les "secrets" sont des variables sensibles (clés API, tokens) que GitHub
-stocke de façon chiffrée. Tes workflows y accèdent via `${{ secrets.NOM }}`.
+**File:** [.github/workflows/frontend.yml](.github/workflows/frontend.yml)
 
-**Aller dans :** GitHub → ton repo → Settings → Secrets and variables → Actions
+**Triggers:** any push or PR that touches `apps/admin-dashboard/**`, `apps/browser-extension/**`, or the workflow file itself.
 
-### Secrets à créer :
+```
+Push / PR (frontend files changed)
+              │
+    ┌─────────┴──────────┐
+    │   Dashboard        │   Extension
+    │   npm ci           │   npm ci
+    │   tsc --noEmit     │   vitest run
+    │   next build       │   build:chrome
+    └─────────┬──────────┘
+              │
+    if main ──┤
+              ├── build:firefox + build:edge + package zips → upload artifacts
+              └── vercel deploy --prod
+    if PR  ───└── vercel deploy (preview URL)
+```
 
-#### Pour Koyeb (déploiement API)
+**Concurrency:** previous runs are automatically cancelled on the same branch / PR.
+Deploys on `main` are never cancelled mid-flight.
 
-| Secret | Valeur | Où trouver |
-|--------|--------|-----------|
-| `KOYEB_API_KEY` | ta clé API | [app.koyeb.com](https://app.koyeb.com) → Account → API Keys |
-| `KOYEB_SERVICE_ID` | ID du service | Koyeb → ton service → URL du service |
+---
 
-**Comment créer le service Koyeb :**
-1. Va sur [app.koyeb.com](https://app.koyeb.com)
-2. Create Service → Docker
-3. Image : `ghcr.io/TON-GITHUB-USERNAME/TON-REPO/security-api:latest`
-4. Port : `8080`
-5. Ajoute toutes tes variables d'environnement (MONGODB_URL, etc.)
-6. Déploie une première fois manuellement
-7. Copie l'ID du service depuis l'URL
+## Workflow 2 — Backend
 
-#### Pour Vercel (déploiement Dashboard)
+**File:** [.github/workflows/backend.yml](.github/workflows/backend.yml)
 
-| Secret | Valeur | Où trouver |
-|--------|--------|-----------|
-| `VERCEL_TOKEN` | ton token | [vercel.com](https://vercel.com) → Settings → Tokens |
-| `VERCEL_ORG_ID` | ton org ID | `vercel.com/account` → Settings → copie "Team ID" |
-| `VERCEL_PROJECT_ID` | ID du projet | Dans `.vercel/project.json` après `vercel link` |
+**Triggers:** any push or PR that touches `services/security-api/**` or the workflow file itself.
 
-**Comment lier ton projet Vercel :**
+```
+Push / PR (backend files changed)
+              │
+         uv sync --group dev
+              │
+         black --check     (formatting)
+         ruff check        (linting)
+         mypy              (type checking)
+         bandit -ll        (security scan — blocks on HIGH severity)
+         pytest --cov      (tests + coverage report)
+              │
+    if main ──┤
+              ├── docker build + push → ghcr.io/.../security-api:latest
+              └── POST koyeb.com/v1/services/{id}/redeploy
+```
+
+**Quality gates run on every push, not only on main.**
+
+### Why Bandit?
+
+Bandit is to Python what `npm audit` is to Node: it detects dangerous patterns in source code (hardcoded secrets, `eval`, SQL injection, shell injection). The `-ll` flag means only **HIGH severity** findings block the pipeline — informational warnings are reported but do not fail the build.
+
+### Why Docker?
+
+Docker packages the application and all its dependencies into a single portable image.
+"works on my machine" → "works everywhere."
+
+#### Multi-stage build (Dockerfile)
+```dockerfile
+# Stage 1: builder — install deps, download spaCy models
+FROM python:3.11-slim AS builder
+# ...
+
+# Stage 2: runtime — lean final image, no build tools
+FROM python:3.11-slim AS runtime
+COPY --from=builder ...
+```
+Result: image ~3× smaller, faster to pull and start.
+
+---
+
+## Workflow 3 — CI / Release
+
+**File:** [.github/workflows/ci.yml](.github/workflows/ci.yml)
+
+**Triggers:**
+- Push or PR touching `.github/workflows/ci.yml` → CI gate (echo checkpoint)
+- Push of a `v*.*.*` tag → full release flow
+- Manual dispatch → manual release build
+
+```
+git push origin v1.2.3
+              │
+         npm ci (extension)
+         vitest run
+         build:chrome + build:firefox + build:edge
+         zip each browser dist/
+              │
+         softprops/action-gh-release
+         → GitHub Release with auto-generated notes + .zip attachments
+```
+
+**How to trigger a release:**
+```bash
+git tag v1.2.3 -m "Release v1.2.3"
+git push origin v1.2.3
+```
+
+Tags containing `-rc` or `-beta` are automatically marked as pre-releases.
+
+---
+
+## Required GitHub Secrets
+
+Go to: **GitHub → your repo → Settings → Secrets and variables → Actions**
+
+### Koyeb (API deployment)
+
+| Secret | Description | Where to find |
+|---|---|---|
+| `KOYEB_API_KEY` | Koyeb API key | app.koyeb.com → Account → API Keys |
+| `KOYEB_SERVICE_ID` | Service identifier | Koyeb → your service → URL |
+
+**First-time Koyeb setup:**
+1. Go to app.koyeb.com → Create Service → Docker
+2. Image: `ghcr.io/YOUR-GITHUB-USERNAME/YOUR-REPO/security-api:latest`
+3. Port: `8080`
+4. Add all environment variables (see section below)
+5. Deploy once manually
+6. Copy the service ID from the URL
+
+### Vercel (Dashboard deployment)
+
+| Secret | Description | Where to find |
+|---|---|---|
+| `VERCEL_TOKEN` | Vercel personal token | vercel.com → Settings → Tokens |
+| `VERCEL_ORG_ID` | Team / org ID | vercel.com/account → Settings → Team ID |
+| `VERCEL_PROJECT_ID` | Project ID | `.vercel/project.json` after `vercel link` |
+
+**Link your Vercel project:**
 ```bash
 npm i -g vercel
 cd apps/admin-dashboard
 vercel link
-# Répond aux questions
-cat .vercel/project.json  # Tu vois orgId et projectId
+cat .vercel/project.json   # shows orgId and projectId
 ```
 
 ---
 
-## Étape 2 : Comprendre le workflow CI
+## Environment Variables
 
-**Fichier :** [.github/workflows/ci.yml](.github/workflows/ci.yml)
-
-Ce workflow se déclenche à chaque `git push`. Il fait :
+### API — configure in Koyeb → Service → Settings → Environment Variables
 
 ```
-Push sur n'importe quelle branche
-           │
-    ┌──────┼──────┐
-    ▼      ▼      ▼
-Test API  Test   Test
-(pytest) (Next) (Vitest)
-    │      │      │
-    └──────┴──────┘
-           │
-      CI Passed ✅ ou ❌
+APP_ENV=production
+MONGODB_URI=mongodb+srv://...
+QDRANT_URL=https://...
+QDRANT_API_KEY=...
+AUTH_SECRET_KEY=...          # generate with: openssl rand -hex 32
+GROQ_API_KEY=...
+SPACY_ENABLED=true
 ```
 
-Si un test échoue → le merge est bloqué → tu dois corriger avant.
-
----
-
-## Étape 3 : Comprendre le workflow Deploy API
-
-**Fichier :** [.github/workflows/deploy-api.yml](.github/workflows/deploy-api.yml)
-
-Se déclenche seulement quand tu pushes sur `main` ET que des fichiers de
-`services/security-api/` ont changé.
+### Dashboard — configure in Vercel → Project → Settings → Environment Variables
 
 ```
-Push sur main (fichiers API modifiés)
-           │
-    Build Docker image
-    (multi-stage : builder + runtime)
-           │
-    Push sur ghcr.io (GitHub Container Registry)
-           │
-    Appel API Koyeb → "redéploie avec la nouvelle image"
-           │
-    Koyeb pull l'image → remplace les conteneurs → ✅
-```
-
-### Pourquoi Docker ?
-Docker = une "boîte" qui contient ton application + toutes ses dépendances.
-L'avantage : "ça marche sur ma machine" → "ça marche partout".
-
-### Multi-stage build (dans le Dockerfile)
-```dockerfile
-# Stage 1 : "builder" — installe tout, compile
-FROM python:3.11-slim AS builder
-# ... installe les dépendances, télécharge spaCy
-
-# Stage 2 : "runtime" — image finale légère
-FROM python:3.11-slim AS runtime
-# Copie SEULEMENT le résultat du builder (pas les outils de build)
-```
-Résultat : image 3x plus petite, plus rapide à déployer.
-
----
-
-## Étape 4 : Comprendre le workflow Deploy Dashboard
-
-**Fichier :** [.github/workflows/deploy-dashboard.yml](.github/workflows/deploy-dashboard.yml)
-
-Vercel propose deux options :
-
-### Option A (recommandée pour débuter) : Intégration native GitHub
-1. Va sur vercel.com → Add New Project
-2. Connecte ton repo GitHub
-3. Configure le root directory : `apps/admin-dashboard`
-4. C'est tout — Vercel gère tout automatiquement
-
-### Option B : Via GitHub Actions (ce workflow)
-Donne plus de contrôle : déploie seulement après que les tests CI passent.
-
-```
-PR créée → Preview deployment (URL unique pour la PR)
-Push main → Production deployment (ton URL principale)
+NEXT_PUBLIC_API_URL=https://your-api.koyeb.app
 ```
 
 ---
 
-## Étape 5 : Comprendre le workflow Extension
-
-**Fichier :** [.github/workflows/build-extension.yml](.github/workflows/build-extension.yml)
-
-Utilise la **strategy matrix** : lance le même job 3 fois en parallèle.
+## Branch Strategy (simplified Git Flow)
 
 ```
-Push main (fichiers extension modifiés)
-           │
-    ┌──────┼──────┐
-    ▼      ▼      ▼
-Chrome  Firefox  Edge
-build   build   build
-    │      │      │
-    └──────┴──────┘
-           │
-    Artifacts .zip disponibles
-    (GitHub → Actions → Summary → Artifacts)
-```
-
-Pour créer une release avec les zips :
-GitHub → Actions → Build Browser Extension → Run workflow → cocher "Créer une release"
-
----
-
-## Stratégie de branches (Git Flow simplifié)
-
-```
-main          ← Production (protégée, merge uniquement via PR)
+main          ← Production (protected, merge via PR only)
   │
-develop       ← Intégration (merge des features avant main)
+develop       ← Integration (merge features here before main)
   │
-feature/xxx   ← Tes fonctionnalités en cours
-fix/xxx       ← Tes corrections de bugs
+feature/xxx   ← Feature branches
+fix/xxx       ← Bug fix branches
 ```
 
-**Règle d'or :** Ne jamais pusher directement sur `main`.
+**Golden rule:** never push directly to `main`.
 
-**Workflow quotidien :**
+**Daily workflow:**
 ```bash
 git checkout develop
 git pull
-git checkout -b feature/ma-fonctionnalite
+git checkout -b feature/my-feature
 
-# ... travaille, commit ...
+# ... work, commit ...
 
-git push origin feature/ma-fonctionnalite
-# Ouvre une PR sur GitHub → CI tourne → review → merge
+git push origin feature/my-feature
+# Open a PR on GitHub → CI runs → review → merge
+```
+
+**What triggers on each push:**
+
+```
+git push feature/xxx   → frontend and/or backend CI (tests + lint only, no deploy)
+git push develop       → frontend and/or backend CI (tests + lint only, no deploy)
+git push main          → CI + deploy (only workflows whose files changed)
+git push v1.2.3        → full extension release build + GitHub Release
 ```
 
 ---
 
-## Variables d'environnement
+## Python Code Quality
 
-### Pour l'API (Koyeb)
-À configurer dans Koyeb → Service → Settings → Environment Variables :
+The backend enforces four automated gates on every push:
 
+| Tool | Role | Config |
+|---|---|---|
+| `black` | Formatting (non-negotiable style) | `pyproject.toml [tool.black]` |
+| `ruff` | Fast linting (replaces flake8 + isort) | `pyproject.toml [tool.ruff]` |
+| `mypy` | Static type checking | `pyproject.toml [tool.mypy]` |
+| `bandit` | Security vulnerability scanning | `-ll` flag (HIGH severity only) |
+| `pytest` | Unit tests + coverage report (XML + terminal) | `pyproject.toml [tool.pytest]` |
+
+**Run locally before pushing:**
+```bash
+cd services/security-api
+uv run black app/ tests/
+uv run ruff check app/ tests/
+uv run mypy app/
+uv run bandit -r app/ -ll
+uv run pytest tests/ -v --cov=app
 ```
-ENVIRONMENT=production
-MONGODB_URL=mongodb+srv://...  (MongoDB Atlas ou ton instance)
-QDRANT_URL=https://...         (Qdrant Cloud ou ton instance)
-QDRANT_API_KEY=...
-JWT_SECRET=...                 (généré aléatoirement)
-GROQ_API_KEY=...               (ton API key Groq)
-```
 
-### Pour le Dashboard (Vercel)
-À configurer dans Vercel → Project → Settings → Environment Variables :
-
-```
-NEXT_PUBLIC_API_URL=https://ton-api.koyeb.app
+**After adding new dev dependencies**, update the lockfile:
+```bash
+uv lock
 ```
 
 ---
 
-## Commandes utiles
+## Useful Commands
 
 ```bash
-# Tester le Dockerfile localement avant de pusher
+# Test the Docker image locally before pushing
 cd services/security-api
 docker build -t security-api-test .
 docker run -p 8080:8080 --env-file .env security-api-test
 
-# Voir les logs d'un workflow GitHub Actions
-# → GitHub → Actions → cliquer sur le run
+# View workflow logs
+# → GitHub → Actions → click the run
 
-# Forcer un redéploiement sans changer le code
-# → GitHub → Actions → Deploy API to Koyeb → Run workflow
+# Force a redeployment without a code change
+# → GitHub → Actions → Backend → Run workflow
+
+# Manual extension release build
+# → GitHub → Actions → CI → Run workflow → check "Create a GitHub Release"
 ```
 
 ---
 
-## Résumé visuel de ce qui se passe quand tu pushes
+## Possible Future Improvements
 
-```
-git push feature/xxx    → CI tourne (tests seulement)
-git push develop        → CI tourne (tests seulement)
-git push main           → CI + Deploy API + Deploy Dashboard + Build Extension
-                          (seulement les composants qui ont changé)
-```
-
----
-
-## Prochaines améliorations possibles
-
-- [ ] **Notifications Slack/Discord** quand un déploiement échoue
-- [ ] **Health checks** : vérifier que l'API répond après déploiement
-- [ ] **Rollback automatique** : revenir à la version précédente si le health check échoue
-- [ ] **Environnement staging** : déployer develop sur Koyeb staging avant main
-- [ ] **Dependabot** : mises à jour automatiques des dépendances
+- [ ] **Slack / Discord notifications** on deployment failure
+- [ ] **Health checks** — verify the API responds after deploy before marking success
+- [ ] **Automatic rollback** — revert to previous image if health check fails
+- [ ] **Staging environment** — deploy `develop` to a Koyeb staging service before `main`
+- [ ] **Dependabot** — automated dependency updates
+- [ ] **pytest coverage gate** — fail if coverage drops below a threshold (e.g. 80%)
+- [ ] **Vitest coverage** — add `@vitest/coverage-v8` to the extension for HTML/XML reports

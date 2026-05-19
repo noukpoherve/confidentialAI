@@ -1,0 +1,138 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# FRONTEND — Dashboard (Next.js) + Browser Extension
+#
+# Runs on every push / PR that touches frontend files.
+# On main: deploys dashboard to Vercel (production) and packages extension zips.
+# On PR:   deploys a Vercel preview and runs tests only for the extension.
+#
+# REQUIRED SECRETS:
+#   - VERCEL_TOKEN      : vercel.com → Settings → Tokens
+#   - VERCEL_ORG_ID     : vercel.com/account → Settings → "Team ID"
+#   - VERCEL_PROJECT_ID : .vercel/project.json after running "vercel link"
+# ══════════════════════════════════════════════════════════════════════════════
+
+name: Frontend
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "apps/admin-dashboard/**"
+      - "apps/browser-extension/**"
+      - ".github/workflows/frontend.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "apps/admin-dashboard/**"
+      - "apps/browser-extension/**"
+      - ".github/workflows/frontend.yml"
+  workflow_dispatch:
+
+# Cancel previous runs on the same branch/PR; preserve deploys on main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  frontend:
+    name: "Frontend (Dashboard + Extension)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # ── Dashboard ────────────────────────────────────────────────────────────
+
+      - name: Install dashboard dependencies
+        working-directory: apps/admin-dashboard
+        run: npm ci
+
+      - name: Lint dashboard (TypeScript)
+        working-directory: apps/admin-dashboard
+        run: npm run lint
+
+      - name: Build dashboard (type-check + Next.js)
+        working-directory: apps/admin-dashboard
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: "http://localhost:8080"
+
+      # ── Extension ────────────────────────────────────────────────────────────
+
+      - name: Install extension dependencies
+        working-directory: apps/browser-extension
+        run: npm ci
+
+      - name: Run extension tests (Vitest)
+        working-directory: apps/browser-extension
+        run: npm test -- --run
+
+      - name: Build extension — Chrome
+        working-directory: apps/browser-extension
+        run: npm run build:extensions:chrome
+
+      - name: Build extension — Firefox
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+        working-directory: apps/browser-extension
+        run: npm run build:extensions:firefox
+
+      - name: Build extension — Edge
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+        working-directory: apps/browser-extension
+        run: npm run build:extensions:edge
+
+      - name: Package extensions as zips
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+        working-directory: apps/browser-extension
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          for BROWSER in chrome firefox edge; do
+            ZIP="confidential-agent-extension-${BROWSER}-v${VERSION}.zip"
+            cd dist/${BROWSER} && zip -r "../../${ZIP}" . && cd ../..
+            echo "Packaged: ${ZIP}"
+          done
+
+      - name: Upload extension artifacts
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-builds
+          path: apps/browser-extension/confidential-agent-extension-*.zip
+          retention-days: 30
+
+      # ── Deploy Dashboard ─────────────────────────────────────────────────────
+
+      - name: Install Vercel CLI
+        if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+        run: npm install -g vercel@latest
+
+      - name: Deploy dashboard — Preview (PR)
+        if: github.event_name == 'pull_request'
+        working-directory: apps/admin-dashboard
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          DEPLOY_URL=$(vercel deploy --token=$VERCEL_TOKEN 2>&1 | tail -1)
+          echo "## Dashboard Preview" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL:** $DEPLOY_URL" >> $GITHUB_STEP_SUMMARY
+
+      - name: Deploy dashboard — Production (main)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        working-directory: apps/admin-dashboard
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          DEPLOY_URL=$(vercel deploy --prod --token=$VERCEL_TOKEN 2>&1 | tail -1)
+          echo "## Dashboard Deployed (Production)" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL:** $DEPLOY_URL" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

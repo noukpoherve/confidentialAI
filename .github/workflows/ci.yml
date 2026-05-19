@@ -1,139 +1,141 @@
 # ══════════════════════════════════════════════════════════════════════════════
-# CI — Continuous Integration
-# Runs on every push or Pull Request.
-# Verifies that code is correct BEFORE it can be merged into main.
+# CI — Build, Release & Gate
+#
+# Consolidates: build artifacts, GitHub releases, and CI gate.
+#
+# Triggers:
+#   push to any branch       → CI gate (only when this file changes)
+#   push of v*.*.* tag       → full release: build all extension zips + GitHub Release
+#   pull_request to main     → CI gate (only when this file changes)
+#   workflow_dispatch        → manual release build
+#
+# Note: path filters apply to branch pushes only — tag pushes always trigger.
+#
+# HOW TO TRIGGER A RELEASE:
+#   git tag v1.2.3 -m "Release v1.2.3"
+#   git push origin v1.2.3
 # ══════════════════════════════════════════════════════════════════════════════
 
 name: CI
 
 on:
   push:
-    branches: ["**"] # Every push on any branch
+    branches: ["**"]
+    paths:
+      - ".github/workflows/ci.yml"
+    tags:
+      - "v*.*.*"
   pull_request:
-    branches: [main, develop] # PRs targeting main or develop
+    branches: [main, develop]
+    paths:
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: "Create a GitHub Release with extension artifacts?"
+        type: boolean
+        default: false
+
+# Cancel previous runs on the same branch/PR; releases on tags are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') && github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: write
+  packages: write
 
 jobs:
-  # ────────────────────────────────────────────────────────────────────────────
-  # JOB 1 : Python API tests (security-api)
-  # ────────────────────────────────────────────────────────────────────────────
-  test-api:
-    name: "Test API (Python)"
+  ci:
+    name: "CI / Build / Release"
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          fetch-depth: 0
 
-      - name: Install uv
-        run: pip install uv
-
-      # Cache dependencies to speed up subsequent runs
-      - name: Cache uv dependencies
-        uses: actions/cache@v4
-        with:
-          path: services/security-api/.venv
-          key: uv-${{ runner.os }}-${{ hashFiles('services/security-api/uv.lock') }}
-          restore-keys: uv-${{ runner.os }}-
-
-      - name: Install dependencies
-        working-directory: services/security-api
-        run: uv sync --group dev
-
-      - name: Run pytest
-        working-directory: services/security-api
-        env:
-          APP_ENV: "test"
-          AUTH_SECRET_KEY: "test-secret-for-ci-only-minimum-32-chars"
-          MONGODB_URI: "mongodb://localhost:27017"
-          SPACY_ENABLED: "false"
-        run: uv run pytest tests/ -v --tb=short
-
-  # ────────────────────────────────────────────────────────────────────────────
-  # JOB 2 : Next.js dashboard tests (admin-dashboard)
-  # ────────────────────────────────────────────────────────────────────────────
-  test-dashboard:
-    name: "Test Dashboard (Next.js)"
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
+      - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: apps/admin-dashboard/package-lock.json
 
-      # Clean install based on package-lock.json
-      - name: Install dependencies
-        working-directory: apps/admin-dashboard
-        run: npm ci
+      # ── CI gate ───────────────────────────────────────────────────────────────
+      # Visible checkpoint for branch protection rules.
+      # Real quality gates are frontend.yml and backend.yml.
 
-      # Verify TypeScript compiles without errors
-      - name: Type check & build
-        working-directory: apps/admin-dashboard
-        run: npm run build
-        env:
-          NEXT_PUBLIC_API_URL: "http://localhost:8080"
+      - name: CI gate
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        run: echo "CI gate passed — see frontend and backend workflow results."
 
-      - name: Lint
-        working-directory: apps/admin-dashboard
-        run: npm run lint
+      # ── Extension build for all browsers ─────────────────────────────────────
+      # Runs on tags (release) or manual dispatch with create_release=true.
 
-  # ────────────────────────────────────────────────────────────────────────────
-  # JOB 3 : Browser extension tests
-  # ────────────────────────────────────────────────────────────────────────────
-  test-extension:
-    name: "Test Extension (Browser)"
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: apps/browser-extension/package-lock.json
-
-      - name: Install dependencies
+      - name: Install extension dependencies
+        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
         working-directory: apps/browser-extension
         run: npm ci
 
-      # Run Vitest in non-interactive mode (no watch)
-      - name: Run Vitest tests
+      - name: Run extension tests
+        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
         working-directory: apps/browser-extension
         run: npm test -- --run
 
-      # build:extensions:chrome already compiles CSS + injects production env
-      - name: Build extension (Chrome, production)
+      - name: Build extension — Chrome
+        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
         working-directory: apps/browser-extension
         run: npm run build:extensions:chrome
 
-  # ────────────────────────────────────────────────────────────────────────────
-  # JOB 4 : Final gate — fails if any previous job failed
-  # ────────────────────────────────────────────────────────────────────────────
-  ci-success:
-    name: "CI Passed"
-    runs-on: ubuntu-latest
-    needs: [test-api, test-dashboard, test-extension]
-    if: always()
-    steps:
-      - name: Check all jobs passed
+      - name: Build extension — Firefox
+        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
+        working-directory: apps/browser-extension
+        run: npm run build:extensions:firefox
+
+      - name: Build extension — Edge
+        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
+        working-directory: apps/browser-extension
+        run: npm run build:extensions:edge
+
+      - name: Package extensions as zips
+        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
+        working-directory: apps/browser-extension
         run: |
-          if [[ "${{ needs.test-api.result }}" == "failure" || \
-                "${{ needs.test-dashboard.result }}" == "failure" || \
-                "${{ needs.test-extension.result }}" == "failure" ]]; then
-            echo "One or more tests failed."
-            exit 1
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION="${{ github.ref_name }}"
+          else
+            VERSION="v$(node -p "require('./package.json').version")"
           fi
-          echo "All tests passed."
+
+          for BROWSER in chrome firefox edge; do
+            ZIP="confidential-agent-extension-${BROWSER}-${VERSION}.zip"
+            cd dist/${BROWSER} && zip -r "../../${ZIP}" . && cd ../..
+            echo "Packaged: ${ZIP}"
+          done
+
+      - name: Upload extension artifacts
+        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-release-builds
+          path: apps/browser-extension/confidential-agent-extension-*.zip
+          retention-days: 90
+
+      # ── GitHub Release (tags only) ────────────────────────────────────────────
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Release ${{ github.ref_name }}"
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}
+          generate_release_notes: true
+          files: apps/browser-extension/confidential-agent-extension-*.zip
+          body: |
+            ## Browser Extension ${{ github.ref_name }}
+
+            ### Installation
+            - **Chrome / Edge**: `chrome://extensions` → Developer mode → Load unpacked
+            - **Firefox**: `about:debugging` → This Firefox → Load Temporary Add-on

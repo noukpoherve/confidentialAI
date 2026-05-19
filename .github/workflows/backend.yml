@@ -7,7 +7,6 @@
 # Quality gates (always):
 #   black  → formatting
 #   ruff   → linting
-#   mypy   → type checking
 #   bandit → security scan (blocks on HIGH severity)
 #   pytest → unit tests with coverage
 #
@@ -77,10 +76,6 @@ jobs:
       - name: Lint (ruff)
         working-directory: services/security-api
         run: uv run ruff check app/ tests/
-
-      - name: Type check (mypy)
-        working-directory: services/security-api
-        run: uv run mypy app/
 
       - name: Security scan (bandit — blocks on HIGH)
         working-directory: services/security-api

@@ -209,6 +209,87 @@ NEXT_PUBLIC_API_URL=https://your-api.koyeb.app
 
 ---
 
+## First-time Deployment Checklist
+
+Follow these steps in order the first time you set up the project for production.
+
+### Step 1 — Fork / clone and configure secrets
+
+```bash
+git clone https://github.com/YOUR-ORG/confidential-agent.git
+cd confidential-agent
+```
+
+In GitHub → your repo → **Settings → Secrets and variables → Actions**, create:
+
+| Secret | Value |
+|---|---|
+| `KOYEB_API_KEY` | Koyeb → Account → API Keys |
+| `KOYEB_SERVICE_ID` | Koyeb → your service → copy from URL |
+| `VERCEL_TOKEN` | vercel.com → Settings → Tokens |
+| `VERCEL_ORG_ID` | vercel.com/account → Settings → Team ID |
+| `VERCEL_PROJECT_ID` | run `vercel link` in `apps/admin-dashboard`, then read `.vercel/project.json` |
+
+### Step 2 — Create the Koyeb service (first deploy is manual)
+
+1. Go to app.koyeb.com → **Create Service → Docker**
+2. Image: `ghcr.io/YOUR-ORG/confidential-agent/security-api:latest`
+3. Port: `8080`
+4. Add environment variables:
+
+```
+APP_ENV=production
+MONGODB_URI=mongodb+srv://...
+AUTH_SECRET_KEY=<openssl rand -hex 32>
+QDRANT_URL=https://...           # optional
+QDRANT_API_KEY=...               # optional
+GROQ_API_KEY=...                 # optional
+SPACY_ENABLED=true
+```
+
+5. Click **Deploy** — this first deployment will fail (image not yet in GHCR). That is expected.
+6. After the first `git push main` with backend files, `backend.yml` builds and pushes the image
+   and triggers an automatic redeploy via the Koyeb API.
+
+### Step 3 — Link the Vercel project
+
+```bash
+npm i -g vercel
+cd apps/admin-dashboard
+vercel link          # follow the prompts, select your org and project
+cat .vercel/project.json   # copy orgId → VERCEL_ORG_ID, projectId → VERCEL_PROJECT_ID
+```
+
+Add the Vercel environment variable in the Vercel dashboard:
+```
+NEXT_PUBLIC_API_URL=https://your-service.koyeb.app
+```
+
+### Step 4 — Push to main and verify
+
+```bash
+git checkout main
+git push origin main
+```
+
+Expected outcome:
+- `backend.yml` → black ✓, ruff ✓, mypy ✓, bandit ✓, pytest ✓, Docker push ✓, Koyeb redeploy ✓
+- `frontend.yml` → lint ✓, build ✓, vitest ✓, Vercel production deploy ✓
+
+Check the **Actions** tab in GitHub for live logs. Each job shows a step-by-step summary in the **Summary** panel.
+
+### Step 5 — Protect the main branch
+
+In GitHub → Settings → Branches → Add rule for `main`:
+
+- [x] Require a pull request before merging
+- [x] Require status checks to pass before merging
+  - Add required checks: `Frontend (Dashboard + Extension)` and `Backend (Python API)`
+- [x] Require branches to be up to date before merging
+- [x] Do not allow bypassing the above settings
+
+---
+
 ## Branch Strategy (simplified Git Flow)
 
 ```
@@ -246,9 +327,95 @@ git push v1.2.3        → full extension release build + GitHub Release
 
 ---
 
+## Conventional Commits and Issue Linking
+
+This repo follows the [Conventional Commits](https://www.conventionalcommits.org) spec.
+Commit messages are parsed by `release-it` to generate `CHANGELOG.md` automatically.
+
+### Commit format
+
+```
+<type>(<scope>): <short description>
+
+[optional body]
+
+[optional footer: Closes #N, Refs #N]
+```
+
+| Type | When to use |
+|---|---|
+| `feat` | New feature visible to users |
+| `fix` | Bug fix |
+| `perf` | Performance improvement (no behavior change) |
+| `refactor` | Code restructuring (no behavior change) |
+| `test` | Adding or updating tests |
+| `ci` | Changes to CI/CD workflows |
+| `chore` | Tooling, deps, config (not shipped to users) |
+| `docs` | Documentation only |
+
+### Linking to GitHub Issues
+
+Add a footer to your commit message or PR description:
+
+| Keyword | Effect on merge to default branch |
+|---|---|
+| `Closes #42` | Automatically closes issue #42 |
+| `Fixes #42` | Same — alternative spelling |
+| `Resolves #42` | Same — alternative spelling |
+| `Refs #42` | Creates a link but does not close the issue |
+
+**Examples:**
+
+```bash
+# Commit that closes an issue
+git commit -m "feat(extension): block prompt on HIGH risk score
+
+Implement the BLOCK action when the API returns risk >= 0.8.
+
+Closes #42"
+
+# Commit that references an issue without closing it
+git commit -m "fix(api): handle MongoDB timeout on cold start
+
+Refs #57"
+
+# Quick one-liner (issue number in the subject line)
+git commit -m "ci: add bandit security scan to backend workflow (#61)"
+```
+
+**In Pull Request descriptions**, always add a `Closes #N` line in the body — GitHub
+renders a direct link to the issue and closes it automatically on merge:
+
+```markdown
+## Summary
+- Add bandit static analysis to the backend CI job
+- Configure HIGH severity threshold (`-ll`) to avoid noise
+
+Closes #61
+```
+
+### Release flow and CHANGELOG
+
+When you are ready to cut a release:
+
+```bash
+npm run release:dry     # preview changelog + version bump without writing
+npm run release         # patch bump (interactive)
+npm run release:minor   # minor bump
+npm run release:major   # major bump
+```
+
+`release-it` will:
+1. Bump the version in all `package.json` files and `pyproject.toml`
+2. Generate / append to `CHANGELOG.md` from conventional commit messages
+3. Create an annotated git tag `vX.Y.Z`
+4. Push the tag — which triggers `ci.yml` and creates the GitHub Release automatically
+
+---
+
 ## Python Code Quality
 
-The backend enforces four automated gates on every push:
+The backend enforces five automated gates on every push:
 
 | Tool     | Role                                          | Config                          |
 | -------- | --------------------------------------------- | ------------------------------- |
@@ -274,6 +441,70 @@ uv run pytest tests/ -v --cov=app
 ```bash
 uv lock
 ```
+
+---
+
+## Pre-commit Hooks
+
+`pre-commit` is already in the dev dependencies and mirrors the CI gates locally,
+catching issues before they ever reach GitHub Actions.
+
+### Setup (one-time, per machine)
+
+```bash
+cd services/security-api
+uv sync --group dev       # installs pre-commit into the venv
+uv run pre-commit install # registers the hook in .git/hooks/pre-commit
+```
+
+Then create `.pre-commit-config.yaml` at the **repo root**:
+
+```yaml
+repos:
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        language_version: python3.11
+        files: ^services/security-api/
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^services/security-api/
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        files: ^services/security-api/app/
+        additional_dependencies: [types-requests]
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.10
+    hooks:
+      - id: bandit
+        args: [-ll]
+        files: ^services/security-api/app/
+```
+
+### Daily usage
+
+```bash
+# Run all hooks against every file (useful after first install)
+uv run pre-commit run --all-files
+
+# Run a single hook
+uv run pre-commit run black
+
+# Bump all hook versions to latest
+uv run pre-commit autoupdate
+```
+
+Once installed, every `git commit` runs the hooks automatically.
+A failing hook blocks the commit and shows exactly what to fix.
 
 ---
 

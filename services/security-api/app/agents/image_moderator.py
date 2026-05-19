@@ -19,14 +19,15 @@ Safe mode (enabled by default via SAFE_MODE_ENABLED env var):
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 
 from app.core.config import settings
+from app.core.policy_engine import PolicyDecision
 
 logger = logging.getLogger(__name__)
-from app.core.policy_engine import PolicyDecision
+
 
 # ── Risk weights per moderation category ────────────────────────────────────
 # A single hit takes the weight of the highest-scoring category.
@@ -75,7 +76,7 @@ def _fail_open(reason: str) -> PolicyDecision:
         reasons=[reason],
         detections=[],
         redactions=[],
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     )
 
 
@@ -184,7 +185,7 @@ def run_image_moderator(
             reasons=["No sensitive content detected in image."],
             detections=[],
             redactions=[],
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
 
     if not hit_categories:
@@ -244,5 +245,5 @@ def run_image_moderator(
         reasons=reasons,
         detections=detections,
         redactions=[],
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     )

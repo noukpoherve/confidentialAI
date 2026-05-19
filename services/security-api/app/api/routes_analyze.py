@@ -10,6 +10,7 @@ from app.core.auth import get_current_user, get_current_user_optional
 from app.core.config import settings
 from app.core.detectors import apply_redactions
 from app.core.incident_store import get_incident_store
+from app.core.rate_limiter import limiter
 from app.schemas.analyze import (
     AnalyzeImageRequest,
     AnalyzeImageResponse,
@@ -18,7 +19,6 @@ from app.schemas.analyze import (
     ValidateResponseRequest,
     ValidateResponseResponse,
 )
-from app.core.rate_limiter import limiter
 
 router = APIRouter(prefix="/v1", tags=["analysis"])
 
@@ -175,7 +175,8 @@ def analyze_image(
             "action": decision.action,
             "riskScore": decision.risk_score,
             "reasons": decision.reasons,
-            "detections": [d for d in decision.detections],
+            # "detections": [d for d in decision.detections],
+            "detections": list(decision.detections),
             "redactions": [],
             "createdAt": decision.created_at,
             "tenantId": body.metadata.tenantId if body.metadata else None,

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.core.config import settings
 from app.core.detectors import build_redactions, detect_sensitive_content
@@ -183,7 +183,7 @@ def analyze_prompt(prompt: str, user_consent: bool | None = None) -> PolicyDecis
         reasons=reasons,
         detections=_build_detections(hits),
         redactions=redactions,
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     )
 
 
@@ -212,7 +212,7 @@ def analyze_response(response_text: str) -> PolicyDecision:
         reasons=reasons,
         detections=_build_detections(hits),
         redactions=redactions,
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     )
 
 
@@ -257,5 +257,5 @@ def analyze_avs_response(response_text: str) -> PolicyDecision:
         reasons=reasons,
         detections=_build_detections(moral_hits),
         redactions=redactions,
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     )

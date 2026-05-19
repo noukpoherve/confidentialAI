@@ -1,4 +1,5 @@
 from typing import Literal
+
 from pydantic import BaseModel, Field
 
 SecurityAction = Literal["ALLOW", "ANONYMIZE", "BLOCK", "WARN", "SUGGEST_REPHRASE"]

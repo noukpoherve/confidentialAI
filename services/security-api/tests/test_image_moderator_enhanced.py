@@ -12,8 +12,6 @@ Covers:
 
 from unittest.mock import patch
 
-import pytest
-
 from app.agents.image_moderator import run_image_moderator
 from app.core import config
 

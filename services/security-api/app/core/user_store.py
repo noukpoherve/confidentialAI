@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Protocol
 from uuid import uuid4
 
@@ -41,7 +41,7 @@ class InMemoryUserStore:
             "id": user_id,
             "email": normalized_email,
             "passwordHash": password_hash,
-            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "createdAt": datetime.now(UTC).isoformat(),
         }
         self.users[user_id] = user
         self.users_by_email[normalized_email] = user_id
@@ -87,7 +87,7 @@ class MongoUserStore:
             "id": str(uuid4()),
             "email": normalized_email,
             "passwordHash": password_hash,
-            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "createdAt": datetime.now(UTC).isoformat(),
         }
         self.users.insert_one(dict(user))
         return user
@@ -126,7 +126,7 @@ def _default_settings() -> dict:
         "customDomains": [],
         "userAddedPlatforms": [],
         "protected_urls": [],
-        "updatedAt": datetime.now(timezone.utc).isoformat(),
+        "updatedAt": datetime.now(UTC).isoformat(),
     }
 
 
@@ -165,7 +165,7 @@ def _build_settings_obj(payload: dict) -> dict:
         "protected_urls": [
             str(u).strip() for u in payload.get("protected_urls", []) if str(u).strip()
         ],
-        "updatedAt": datetime.now(timezone.utc).isoformat(),
+        "updatedAt": datetime.now(UTC).isoformat(),
     }
 
 

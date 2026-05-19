@@ -46,7 +46,11 @@ target-version = "py311"
 line-length = 88
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I"]
+select = ["E", "F", "W", "I", "B", "C4", "UP"]
+ignore = [
+    "E501",   # line too long — handled by black, not ruff
+    "B008",   # Depends() in defaults — FastAPI pattern, intentional
+]
 
 [tool.mypy]
 python_version = "3.11"

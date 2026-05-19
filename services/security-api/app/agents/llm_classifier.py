@@ -153,7 +153,7 @@ def _call_classifier(text: str, *, response_moral: bool = False) -> dict | None:
                 response = client.post(url, headers=headers, json=body)
             if response.status_code == 429:
                 # Rate-limited by upstream — retry with backoff.
-                last_exc = Exception(f"HTTP 429 rate-limited")
+                last_exc = Exception("HTTP 429 rate-limited")
                 continue
             if not response.is_success:
                 logger.warning(

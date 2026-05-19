@@ -4,13 +4,13 @@ import logging
 import re
 from functools import lru_cache
 
+from app.core.config import settings
 from app.core.detectors import (
     DetectorHit,
     build_redactions,
     build_url_protection_patterns,
     detect_sensitive_content,
 )
-from app.core.config import settings
 from app.core.policy_engine import (
     PolicyDecision,
     _build_detections,

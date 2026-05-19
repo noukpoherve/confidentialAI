@@ -1,8 +1,8 @@
-from app.core.config import settings
 from app.agents.orchestrator import (
     analyze_prompt_with_agents,
     validate_response_with_agents,
 )
+from app.core.config import settings
 
 
 def test_prompt_graph_returns_policy_decision() -> None:

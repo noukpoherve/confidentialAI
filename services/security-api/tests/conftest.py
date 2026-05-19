@@ -5,10 +5,10 @@ Shared pytest fixtures for confidential-Agent test suite.
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
 from app.api import routes_analyze, routes_auth, routes_user_settings
 from app.core import auth as auth_core
 from app.core.user_store import InMemoryUserStore
+from app.main import app
 
 
 @pytest.fixture

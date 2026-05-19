@@ -6,6 +6,7 @@ explaining the original incident.
 """
 
 import pytest
+
 from app.core.detectors import detect_sensitive_content
 from app.core.policy_engine import analyze_prompt
 

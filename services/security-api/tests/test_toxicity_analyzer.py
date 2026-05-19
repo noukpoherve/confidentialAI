@@ -11,6 +11,7 @@ Tests cover:
 - Non-toxic text: original decision unchanged.
 """
 
+from datetime import UTC
 from unittest.mock import patch
 
 import pytest
@@ -22,7 +23,7 @@ from app.core.policy_engine import PolicyDecision
 
 
 def _make_decision(action: str, risk_score: int = 0) -> PolicyDecision:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     return PolicyDecision(
         action=action,
@@ -30,7 +31,7 @@ def _make_decision(action: str, risk_score: int = 0) -> PolicyDecision:
         reasons=["Initial reason"],
         detections=[],
         redactions=[],
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     )
 
 

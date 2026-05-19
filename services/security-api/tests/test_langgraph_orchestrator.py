@@ -1,5 +1,8 @@
 from app.core.config import settings
-from app.agents.orchestrator import analyze_prompt_with_agents, validate_response_with_agents
+from app.agents.orchestrator import (
+    analyze_prompt_with_agents,
+    validate_response_with_agents,
+)
 
 
 def test_prompt_graph_returns_policy_decision() -> None:
@@ -68,7 +71,9 @@ def test_prompt_graph_samsung_scenario() -> None:
         "Contact john.doe@corp.example.com if anything looks wrong.\n"
         "The audit covers the Q2 security review for project Phoenix."
     )
-    execution = analyze_prompt_with_agents(prompt=samsung_like_prompt, user_consent=False)
+    execution = analyze_prompt_with_agents(
+        prompt=samsung_like_prompt, user_consent=False
+    )
     decision = execution.decision
 
     assert decision.action == "BLOCK"

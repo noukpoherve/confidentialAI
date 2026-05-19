@@ -1,6 +1,7 @@
 """
 Shared pytest fixtures for confidential-Agent test suite.
 """
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -42,6 +43,7 @@ def auth_headers(client_with_auth_store):
 @pytest.fixture
 def stub_incident_store(monkeypatch):
     """Replaces the MongoDB incident store with a thread-safe in-memory stub."""
+
     class _StubStore:
         def __init__(self):
             self.items = []
@@ -50,7 +52,7 @@ def stub_incident_store(monkeypatch):
             self.items.insert(0, dict(incident))
 
         def list_incidents(self, limit):
-            return self.items[:max(limit, 0)]
+            return self.items[: max(limit, 0)]
 
     store = _StubStore()
     monkeypatch.setattr(routes_analyze, "get_incident_store", lambda: store)

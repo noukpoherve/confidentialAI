@@ -31,9 +31,12 @@ def _debug_person_filter(reason: str, text: str, label: str | None = None) -> No
     if not _dev_debug_enabled():
         return
     if label:
-        logger.debug("[spaCy PERSON filter] %s | label=%s | text=%r", reason, label, text)
+        logger.debug(
+            "[spaCy PERSON filter] %s | label=%s | text=%r", reason, label, text
+        )
     else:
         logger.debug("[spaCy PERSON filter] %s | text=%r", reason, text)
+
 
 ENGLISH_VERBS = frozenset(
     {
@@ -122,6 +125,7 @@ _EN_NER_MODELS = ("en_core_web_lg", "en_core_web_md", "en_core_web_sm")
 @lru_cache(maxsize=8)
 def _load_spacy_model(model_name: str):
     import spacy
+
     return spacy.load(model_name)
 
 
@@ -137,7 +141,10 @@ def _nlp_for_ner(lang_code: str):
         try:
             nlp = _load_spacy_model(name)
             if name != (candidates[0] if use_fr else _EN_NER_MODELS[0]):
-                logger.info("spaCy NER using fallback model %s (preferred lg/md not installed)", name)
+                logger.info(
+                    "spaCy NER using fallback model %s (preferred lg/md not installed)",
+                    name,
+                )
             return nlp
         except Exception as e:
             last_err = e
@@ -153,6 +160,7 @@ def _nlp_for_ner(lang_code: str):
 def _detect_language_code(text: str) -> str:
     try:
         from langdetect import detect
+
         if not (text or "").strip():
             return "en"
         return detect(text)
@@ -198,28 +206,46 @@ def _reject_per_person_entity(ent, prompt: str) -> bool:
     tl = text.lower()
     words = [w for w in re.split(r"\s+", text) if w]
     if tl in ENGLISH_VERBS | FRENCH_VERBS:
-        _debug_person_filter("reject: verb-like token", text, getattr(ent, "label_", None))
+        _debug_person_filter(
+            "reject: verb-like token", text, getattr(ent, "label_", None)
+        )
         return True
     if any(w.lower() in PROFANITY_TOKENS for w in words):
-        _debug_person_filter("reject: profanity token", text, getattr(ent, "label_", None))
+        _debug_person_filter(
+            "reject: profanity token", text, getattr(ent, "label_", None)
+        )
         return True
     # PERSON entities are expected to contain at least one capitalized token.
     # Lowercase chunks such as "fuck you" should be rejected as false positives.
     if not any((w[:1].isupper() and any(c.isalpha() for c in w)) for w in words):
-        _debug_person_filter("reject: no capitalized token", text, getattr(ent, "label_", None))
+        _debug_person_filter(
+            "reject: no capitalized token", text, getattr(ent, "label_", None)
+        )
         return True
     if len(text.split()) < 2:
         if ent.start == 0:
-            _debug_person_filter("reject: single token at sentence start", text, getattr(ent, "label_", None))
+            _debug_person_filter(
+                "reject: single token at sentence start",
+                text,
+                getattr(ent, "label_", None),
+            )
             return True
         if ent.start_char >= 2 and prompt[ent.start_char - 2] in ".!?\n":
-            _debug_person_filter("reject: single token after punctuation", text, getattr(ent, "label_", None))
+            _debug_person_filter(
+                "reject: single token after punctuation",
+                text,
+                getattr(ent, "label_", None),
+            )
             return True
     if text.isupper():
-        _debug_person_filter("reject: all uppercase", text, getattr(ent, "label_", None))
+        _debug_person_filter(
+            "reject: all uppercase", text, getattr(ent, "label_", None)
+        )
         return True
     if "_" in text or "-" in text:
-        _debug_person_filter("reject: contains underscore/hyphen", text, getattr(ent, "label_", None))
+        _debug_person_filter(
+            "reject: contains underscore/hyphen", text, getattr(ent, "label_", None)
+        )
         return True
     _debug_person_filter("accept", text, getattr(ent, "label_", None))
     return False
@@ -345,6 +371,7 @@ def _load_gliner_model():
     """Load and cache the GLiNER model. Returns None if not installed/available."""
     try:
         from gliner import GLiNER  # type: ignore[import]
+
         model = GLiNER.from_pretrained(settings.gliner_model)
         logger.info("GLiNER model loaded: %s", settings.gliner_model)
         return model
@@ -355,7 +382,9 @@ def _load_gliner_model():
         )
         return None
     except Exception as exc:
-        logger.warning("GLiNER model load failed (%s) — falling back to spaCy only.", exc)
+        logger.warning(
+            "GLiNER model load failed (%s) — falling back to spaCy only.", exc
+        )
         return None
 
 
@@ -379,7 +408,9 @@ def _apply_gliner_ner(decision: PolicyDecision, prompt: str) -> PolicyDecision:
 
     try:
         truncated = prompt[:_GLINER_MAX_CHARS]
-        entities = model.predict_entities(truncated, _GLINER_LABELS, threshold=_GLINER_THRESHOLD)
+        entities = model.predict_entities(
+            truncated, _GLINER_LABELS, threshold=_GLINER_THRESHOLD
+        )
     except Exception as exc:
         logger.debug("GLiNER inference failed: %s", exc)
         return decision
@@ -428,7 +459,9 @@ def _apply_gliner_ner(decision: PolicyDecision, prompt: str) -> PolicyDecision:
     return decision
 
 
-def run_afe(prompt: str, user_consent: bool | None, user_id: str | None = None) -> PolicyDecision:
+def run_afe(
+    prompt: str, user_consent: bool | None, user_id: str | None = None
+) -> PolicyDecision:
     """
     AFE (Input Filtering Agent) for prompt-level risk analysis.
 
@@ -469,7 +502,11 @@ def run_afe(prompt: str, user_consent: bool | None, user_id: str | None = None) 
         hit_types_list = [h.hit_type for h in all_hits]
         risk_score = _score_hits(hit_types_list)
         action, reasons = _decide_action(risk_score, set(hit_types_list), user_consent)
-        redactions = build_redactions(all_hits) if action in {"ANONYMIZE", "WARN", "BLOCK"} else []
+        redactions = (
+            build_redactions(all_hits)
+            if action in {"ANONYMIZE", "WARN", "BLOCK"}
+            else []
+        )
         decision = PolicyDecision(
             action=action,
             risk_score=risk_score,

@@ -17,7 +17,9 @@ class SiteSignalRequest(BaseModel):
     pageUrl: str | None = None
     platformId: str | None = None
     details: str | None = None
-    createdAt: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    createdAt: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
 
 class SiteSignalResponse(BaseModel):

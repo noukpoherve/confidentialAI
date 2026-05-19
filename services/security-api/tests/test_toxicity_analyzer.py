@@ -18,11 +18,12 @@ import pytest
 from app.agents.toxicity_analyzer import run_toxicity_analyzer
 from app.core.policy_engine import PolicyDecision
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _make_decision(action: str, risk_score: int = 0) -> PolicyDecision:
     from datetime import datetime, timezone
+
     return PolicyDecision(
         action=action,
         risk_score=risk_score,
@@ -58,6 +59,7 @@ _NON_TOXIC_RESULT = {
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
+
 def test_fail_open_when_disabled(settings_toxicity_off):
     """Should return original decision unchanged when analyzer is disabled."""
     decision = _make_decision("ALLOW")
@@ -76,7 +78,9 @@ def test_fail_open_when_llm_returns_none_and_no_toxic_signal():
 def test_fallback_suggestions_when_llm_unavailable_and_toxic_signal_exists():
     """With TOXIC_LANGUAGE already detected, LLM failure still returns suggestions."""
     decision = _make_decision("ALLOW")
-    decision.detections = [{"type": "TOXIC_LANGUAGE", "valuePreview": "PROFANITY", "confidence": 0.9}]
+    decision.detections = [
+        {"type": "TOXIC_LANGUAGE", "valuePreview": "PROFANITY", "confidence": 0.9}
+    ]
     with patch("app.agents.toxicity_analyzer._call_toxicity_llm", return_value=None):
         result = run_toxicity_analyzer("fuck you", decision)
     assert result.action == "SUGGEST_REPHRASE"
@@ -86,7 +90,9 @@ def test_fallback_suggestions_when_llm_unavailable_and_toxic_signal_exists():
 def test_allow_upgraded_to_suggest_rephrase():
     """ALLOW + toxic content → action becomes SUGGEST_REPHRASE."""
     decision = _make_decision("ALLOW", risk_score=0)
-    with patch("app.agents.toxicity_analyzer._call_toxicity_llm", return_value=_TOXIC_RESULT):
+    with patch(
+        "app.agents.toxicity_analyzer._call_toxicity_llm", return_value=_TOXIC_RESULT
+    ):
         result = run_toxicity_analyzer("Va te faire foutre!", decision)
     assert result.action == "SUGGEST_REPHRASE"
     assert len(result.suggestions) == 3
@@ -96,7 +102,9 @@ def test_allow_upgraded_to_suggest_rephrase():
 def test_warn_keeps_action_but_adds_suggestions():
     """WARN + toxic content → action stays WARN, suggestions are added."""
     decision = _make_decision("WARN", risk_score=45)
-    with patch("app.agents.toxicity_analyzer._call_toxicity_llm", return_value=_TOXIC_RESULT):
+    with patch(
+        "app.agents.toxicity_analyzer._call_toxicity_llm", return_value=_TOXIC_RESULT
+    ):
         result = run_toxicity_analyzer("Fuck this, my token is abc123", decision)
     assert result.action == "WARN"
     assert len(result.suggestions) == 3
@@ -106,7 +114,9 @@ def test_warn_keeps_action_but_adds_suggestions():
 def test_anonymize_keeps_action_but_adds_suggestions():
     """ANONYMIZE + toxic content → action stays ANONYMIZE, suggestions added."""
     decision = _make_decision("ANONYMIZE", risk_score=20)
-    with patch("app.agents.toxicity_analyzer._call_toxicity_llm", return_value=_TOXIC_RESULT):
+    with patch(
+        "app.agents.toxicity_analyzer._call_toxicity_llm", return_value=_TOXIC_RESULT
+    ):
         result = run_toxicity_analyzer("my email is shit@example.com", decision)
     assert result.action == "ANONYMIZE"
     assert len(result.suggestions) == 3
@@ -127,7 +137,9 @@ def test_suggestions_capped_at_three():
     bloated_result = dict(_TOXIC_RESULT)
     bloated_result["suggestions"] = [f"suggestion {i}" for i in range(6)]
     decision = _make_decision("ALLOW")
-    with patch("app.agents.toxicity_analyzer._call_toxicity_llm", return_value=bloated_result):
+    with patch(
+        "app.agents.toxicity_analyzer._call_toxicity_llm", return_value=bloated_result
+    ):
         result = run_toxicity_analyzer("awful text", decision)
     assert len(result.suggestions) == 3
 
@@ -135,7 +147,10 @@ def test_suggestions_capped_at_three():
 def test_non_toxic_text_unchanged():
     """Non-toxic text → original decision returned unchanged."""
     decision = _make_decision("ALLOW")
-    with patch("app.agents.toxicity_analyzer._call_toxicity_llm", return_value=_NON_TOXIC_RESULT):
+    with patch(
+        "app.agents.toxicity_analyzer._call_toxicity_llm",
+        return_value=_NON_TOXIC_RESULT,
+    ):
         result = run_toxicity_analyzer("Could you please help me with this?", decision)
     assert result.action == "ALLOW"
     assert result.suggestions == []
@@ -144,7 +159,9 @@ def test_non_toxic_text_unchanged():
 def test_toxic_detection_appended():
     """A TOXIC_LANGUAGE detection entry is always added when toxicity is found."""
     decision = _make_decision("ALLOW")
-    with patch("app.agents.toxicity_analyzer._call_toxicity_llm", return_value=_TOXIC_RESULT):
+    with patch(
+        "app.agents.toxicity_analyzer._call_toxicity_llm", return_value=_TOXIC_RESULT
+    ):
         result = run_toxicity_analyzer("rude text", decision)
     types = [d["type"] for d in result.detections]
     assert "TOXIC_LANGUAGE" in types
@@ -153,15 +170,19 @@ def test_toxic_detection_appended():
 def test_reason_appended():
     """Toxicity reason should be appended to the reasons list."""
     decision = _make_decision("ALLOW")
-    with patch("app.agents.toxicity_analyzer._call_toxicity_llm", return_value=_TOXIC_RESULT):
+    with patch(
+        "app.agents.toxicity_analyzer._call_toxicity_llm", return_value=_TOXIC_RESULT
+    ):
         result = run_toxicity_analyzer("rude text", decision)
     assert any("Toxicity" in r or "toxic" in r.lower() for r in result.reasons)
 
 
 # ── Fixture ───────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def settings_toxicity_off(monkeypatch):
     """Temporarily disable the toxicity analyzer via settings."""
     from app.core import config
+
     monkeypatch.setattr(config.settings, "toxicity_analyzer_enabled", False)

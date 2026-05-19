@@ -33,9 +33,13 @@ class Settings(BaseModel):
     enable_strict_block_on_secret: bool = True
     mongodb_uri: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
     mongodb_db_name: str = os.getenv("MONGODB_DB_NAME", "confidential_agent")
-    mongodb_incidents_collection: str = os.getenv("MONGODB_INCIDENTS_COLLECTION", "incidents")
+    mongodb_incidents_collection: str = os.getenv(
+        "MONGODB_INCIDENTS_COLLECTION", "incidents"
+    )
     incidents_list_limit: int = int(os.getenv("INCIDENTS_LIST_LIMIT", "100"))
-    telegram_alerts_enabled: bool = os.getenv("TELEGRAM_ALERTS_ENABLED", "false").lower() == "true"
+    telegram_alerts_enabled: bool = (
+        os.getenv("TELEGRAM_ALERTS_ENABLED", "false").lower() == "true"
+    )
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
     telegram_alert_actions: list[str] = [
@@ -47,29 +51,41 @@ class Settings(BaseModel):
     llm_classifier_enabled: bool = (
         os.getenv("LLM_CLASSIFIER_ENABLED", _llm_enabled_default).lower() == "true"
     )
-    llm_classifier_api_base: str = os.getenv("LLM_CLASSIFIER_API_BASE", "https://api.openai.com/v1")
+    llm_classifier_api_base: str = os.getenv(
+        "LLM_CLASSIFIER_API_BASE", "https://api.openai.com/v1"
+    )
     llm_classifier_model: str = os.getenv("LLM_CLASSIFIER_MODEL", "gpt-4.1-mini")
     llm_classifier_api_key: str = _llm_api_key
-    llm_classifier_timeout_seconds: float = float(os.getenv("LLM_CLASSIFIER_TIMEOUT_SECONDS", "2.5"))
+    llm_classifier_timeout_seconds: float = float(
+        os.getenv("LLM_CLASSIFIER_TIMEOUT_SECONDS", "2.5")
+    )
     # Image moderation calls OpenAI /v1/moderations.
     # 15s is aggressive enough to avoid blocking ASGI workers for long; set higher via env if needed.
     # In a future async refactor this should be a background task rather than blocking the request thread.
-    image_moderation_timeout_seconds: float = float(os.getenv("IMAGE_MODERATION_TIMEOUT_SECONDS", "15"))
+    image_moderation_timeout_seconds: float = float(
+        os.getenv("IMAGE_MODERATION_TIMEOUT_SECONDS", "15")
+    )
     auth_secret_key: str = os.getenv(
         "AUTH_SECRET_KEY", "change-me-for-production-with-at-least-32-chars"
     )
     auth_algorithm: str = os.getenv("AUTH_ALGORITHM", "HS256")
     auth_access_token_minutes: int = int(os.getenv("AUTH_ACCESS_TOKEN_MINUTES", "120"))
     users_collection: str = os.getenv("MONGODB_USERS_COLLECTION", "users")
-    user_settings_collection: str = os.getenv("MONGODB_USER_SETTINGS_COLLECTION", "user_settings")
-    site_signals_collection: str = os.getenv("MONGODB_SITE_SIGNALS_COLLECTION", "site_signals")
+    user_settings_collection: str = os.getenv(
+        "MONGODB_USER_SETTINGS_COLLECTION", "user_settings"
+    )
+    site_signals_collection: str = os.getenv(
+        "MONGODB_SITE_SIGNALS_COLLECTION", "site_signals"
+    )
     site_signals_list_limit: int = int(os.getenv("SITE_SIGNALS_LIST_LIMIT", "200"))
     # Safe mode: stricter image moderation — catches partial nudity (lingerie,
     # underwear) at lower confidence scores to protect younger audiences.
     safe_mode_enabled: bool = os.getenv("SAFE_MODE_ENABLED", "true").lower() == "true"
     # Minimum raw sexual-content score from the moderation API that triggers a
     # WARN in safe mode.  Default 0.06 (6 %) catches lingerie-level content.
-    safe_mode_sexual_threshold: float = float(os.getenv("SAFE_MODE_SEXUAL_THRESHOLD", "0.06"))
+    safe_mode_sexual_threshold: float = float(
+        os.getenv("SAFE_MODE_SEXUAL_THRESHOLD", "0.06")
+    )
     # Toxicity analyzer: LLM-based detection of vulgar / aggressive language
     # with 3-suggestion rephrasing to promote healthy communication.
     toxicity_analyzer_enabled: bool = (
@@ -77,13 +93,19 @@ class Settings(BaseModel):
     )
     # Qdrant + embeddings: skip LLM classifier when a prompt is semantically
     # similar to a past BLOCK/WARN incident (fail-open if Qdrant/embeddings fail).
-    vector_search_enabled: bool = os.getenv("VECTOR_SEARCH_ENABLED", "false").lower() == "true"
+    vector_search_enabled: bool = (
+        os.getenv("VECTOR_SEARCH_ENABLED", "false").lower() == "true"
+    )
     qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333")
     # Qdrant Cloud (and secured clusters) require an API key; local Docker usually omits it.
     qdrant_api_key: str = os.getenv("QDRANT_API_KEY", "")
     qdrant_grpc_port: int = int(os.getenv("QDRANT_GRPC_PORT", "6334"))
-    qdrant_prefer_grpc: bool = os.getenv("QDRANT_PREFER_GRPC", "false").lower() == "true"
-    qdrant_collection: str = os.getenv("QDRANT_COLLECTION", "confidential_agent_incidents")
+    qdrant_prefer_grpc: bool = (
+        os.getenv("QDRANT_PREFER_GRPC", "false").lower() == "true"
+    )
+    qdrant_collection: str = os.getenv(
+        "QDRANT_COLLECTION", "confidential_agent_incidents"
+    )
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
     embedding_dimensions: int = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
     vector_match_min_score: float = float(os.getenv("VECTOR_MATCH_MIN_SCORE", "0.88"))
@@ -98,12 +120,16 @@ class Settings(BaseModel):
     # In development the dashboard runs on localhost:3000 by default.
     allowed_origins: list[str] = [
         o.strip()
-        for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
+        for o in os.getenv(
+            "ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001"
+        ).split(",")
         if o.strip()
     ]
     # Rate limits (slowapi format: "N/period", e.g. "60/minute").
     rate_limit_analyze: str = os.getenv("RATE_LIMIT_ANALYZE", "60/minute")
-    rate_limit_validate_response: str = os.getenv("RATE_LIMIT_VALIDATE_RESPONSE", "60/minute")
+    rate_limit_validate_response: str = os.getenv(
+        "RATE_LIMIT_VALIDATE_RESPONSE", "60/minute"
+    )
     rate_limit_analyze_image: str = os.getenv("RATE_LIMIT_ANALYZE_IMAGE", "20/minute")
     # ── Error tracking (GlitchTip via Sentry SDK) ─────────────────────────────
     # Active only if APP_ENV=production AND this variable is set.

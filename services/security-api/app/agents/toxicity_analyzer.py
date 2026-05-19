@@ -83,13 +83,20 @@ _PROFANITY_REPLACEMENTS: dict[str, str] = {
     "salope": "personne",
 }
 _PROFANITY_PATTERN = re.compile(
-    r"\b(" + "|".join(re.escape(k) for k in sorted(_PROFANITY_REPLACEMENTS, key=len, reverse=True)) + r")\b",
+    r"\b("
+    + "|".join(
+        re.escape(k) for k in sorted(_PROFANITY_REPLACEMENTS, key=len, reverse=True)
+    )
+    + r")\b",
     re.IGNORECASE,
 )
 
 
 def _has_toxic_detection(decision: PolicyDecision) -> bool:
-    return any(str(d.get("type", "")).upper() == "TOXIC_LANGUAGE" for d in (decision.detections or []))
+    return any(
+        str(d.get("type", "")).upper() == "TOXIC_LANGUAGE"
+        for d in (decision.detections or [])
+    )
 
 
 def _sanitize_toxic_text(text: str) -> str:
@@ -142,7 +149,9 @@ def _call_toxicity_llm(text: str) -> dict | None:
     }
 
     try:
-        with httpx.Client(timeout=settings.llm_classifier_timeout_seconds * 2) as client:
+        with httpx.Client(
+            timeout=settings.llm_classifier_timeout_seconds * 2
+        ) as client:
             resp = client.post(url, headers=headers, json=body)
         if not resp.is_success:
             return None
@@ -183,11 +192,14 @@ def run_toxicity_analyzer(text: str, decision: PolicyDecision) -> PolicyDecision
         if not _has_toxic_detection(decision):
             return decision
         suggestions = _fallback_suggestions(text)
-        new_action = "SUGGEST_REPHRASE" if decision.action == "ALLOW" else decision.action
+        new_action = (
+            "SUGGEST_REPHRASE" if decision.action == "ALLOW" else decision.action
+        )
         return PolicyDecision(
             action=new_action,
             risk_score=decision.risk_score,
-            reasons=list(decision.reasons) + ["[Toxicity] Offensive language detected (fallback suggestions)."],
+            reasons=list(decision.reasons)
+            + ["[Toxicity] Offensive language detected (fallback suggestions)."],
             detections=decision.detections,
             redactions=decision.redactions,
             created_at=decision.created_at,
@@ -203,7 +215,9 @@ def run_toxicity_analyzer(text: str, decision: PolicyDecision) -> PolicyDecision
     raw_suggestions: list = result.get("suggestions", [])
 
     # Keep only non-empty string suggestions, max 3.
-    suggestions = [s.strip() for s in raw_suggestions if isinstance(s, str) and s.strip()][:3]
+    suggestions = [
+        s.strip() for s in raw_suggestions if isinstance(s, str) and s.strip()
+    ][:3]
 
     # Severity → risk score contribution.
     severity_score = {"low": 15, "medium": 30, "high": 55}.get(severity, 15)
@@ -211,7 +225,9 @@ def run_toxicity_analyzer(text: str, decision: PolicyDecision) -> PolicyDecision
     new_detections = list(decision.detections) + [
         {
             "type": "TOXIC_LANGUAGE",
-            "valuePreview": ", ".join(categories[:3]) if categories else severity.upper(),
+            "valuePreview": (
+                ", ".join(categories[:3]) if categories else severity.upper()
+            ),
             "confidence": round(confidence, 3),
         }
     ]
@@ -222,7 +238,11 @@ def run_toxicity_analyzer(text: str, decision: PolicyDecision) -> PolicyDecision
 
     # ALLOW → SUGGEST_REPHRASE; WARN / ANONYMIZE → keep action but attach suggestions.
     new_action = "SUGGEST_REPHRASE" if decision.action == "ALLOW" else decision.action
-    new_risk = max(decision.risk_score, severity_score) if new_action == "SUGGEST_REPHRASE" else decision.risk_score
+    new_risk = (
+        max(decision.risk_score, severity_score)
+        if new_action == "SUGGEST_REPHRASE"
+        else decision.risk_score
+    )
 
     return PolicyDecision(
         action=new_action,

@@ -2,7 +2,10 @@ from fastapi import APIRouter, Depends, Request
 
 from app.agents.asi import notify_critical_incident
 from app.agents.image_moderator import run_image_moderator
-from app.agents.orchestrator import analyze_prompt_with_agents, validate_response_with_agents
+from app.agents.orchestrator import (
+    analyze_prompt_with_agents,
+    validate_response_with_agents,
+)
 from app.core.auth import get_current_user, get_current_user_optional
 from app.core.config import settings
 from app.core.detectors import apply_redactions
@@ -47,7 +50,9 @@ def _build_incident_payload(
         "metadata": metadata,
         "graphTrace": graph_trace,
         # Keep a short redacted preview only, never raw prompt content.
-        "contentPreview": apply_redactions(raw_text, [r.model_dump() for r in response.redactions])[:300],
+        "contentPreview": apply_redactions(
+            raw_text, [r.model_dump() for r in response.redactions]
+        )[:300],
     }
     # Store rephrase suggestions when the toxicity analyzer triggered.
     if hasattr(response, "suggestions") and response.suggestions:

@@ -14,8 +14,10 @@ from langgraph.graph import END, START, StateGraph
 
 
 class PromptGraphState(TypedDict):
-    prompt: str                               # original — never modified
-    anonymized_prompt: NotRequired[str]       # prompt with all local-layer redactions applied
+    prompt: str  # original — never modified
+    anonymized_prompt: NotRequired[
+        str
+    ]  # prompt with all local-layer redactions applied
     user_consent: bool | None
     user_id: NotRequired[str | None]
     decision: NotRequired[PolicyDecision]
@@ -66,7 +68,10 @@ def _prompt_toxicity_node(state: PromptGraphState) -> PromptGraphState:
     for the raw language, not for already-masked placeholders.
     """
     decision = run_toxicity_analyzer(text=state["prompt"], decision=state["decision"])
-    return {"decision": decision, "visited": [*state.get("visited", []), "toxicity_analyzer"]}
+    return {
+        "decision": decision,
+        "visited": [*state.get("visited", []), "toxicity_analyzer"],
+    }
 
 
 def _prompt_llm_classifier_node(state: PromptGraphState) -> PromptGraphState:
@@ -86,7 +91,10 @@ def _prompt_llm_classifier_node(state: PromptGraphState) -> PromptGraphState:
     """
     text_for_llm = state.get("anonymized_prompt") or state["prompt"]
     decision = run_llm_classifier(text=text_for_llm, decision=state["decision"])
-    return {"decision": decision, "visited": [*state.get("visited", []), "llm_classifier"]}
+    return {
+        "decision": decision,
+        "visited": [*state.get("visited", []), "llm_classifier"],
+    }
 
 
 def _prompt_vector_search_node(state: PromptGraphState) -> PromptGraphState:
@@ -124,8 +132,13 @@ def _response_ac_node(state: ResponseGraphState) -> ResponseGraphState:
 
 
 def _response_toxicity_node(state: ResponseGraphState) -> ResponseGraphState:
-    decision = run_toxicity_analyzer(text=state["response_text"], decision=state["decision"])
-    return {"decision": decision, "visited": [*state.get("visited", []), "toxicity_analyzer"]}
+    decision = run_toxicity_analyzer(
+        text=state["response_text"], decision=state["decision"]
+    )
+    return {
+        "decision": decision,
+        "visited": [*state.get("visited", []), "toxicity_analyzer"],
+    }
 
 
 def _response_llm_classifier_node(state: ResponseGraphState) -> ResponseGraphState:
@@ -137,7 +150,10 @@ def _response_llm_classifier_node(state: ResponseGraphState) -> ResponseGraphSta
     decision = run_llm_classifier(
         text=state["response_text"], decision=state["decision"], response_moral=True
     )
-    return {"decision": decision, "visited": [*state.get("visited", []), "llm_classifier"]}
+    return {
+        "decision": decision,
+        "visited": [*state.get("visited", []), "llm_classifier"],
+    }
 
 
 def _route_after_ac(state: PromptGraphState | ResponseGraphState) -> str:
@@ -231,9 +247,16 @@ def analyze_prompt_with_agents(
     5. Toxicity analyzer — rephrase suggestions for offensive language (non-BLOCK only).
     """
     result = _prompt_graph.invoke(
-        {"prompt": prompt, "user_consent": user_consent, "user_id": user_id, "visited": []}
+        {
+            "prompt": prompt,
+            "user_consent": user_consent,
+            "user_id": user_id,
+            "visited": [],
+        }
     )
-    return AgentExecution(decision=result["decision"], graph_trace=result.get("visited", []))
+    return AgentExecution(
+        decision=result["decision"], graph_trace=result.get("visited", [])
+    )
 
 
 def validate_response_with_agents(response_text: str) -> AgentExecution:
@@ -248,4 +271,6 @@ def validate_response_with_agents(response_text: str) -> AgentExecution:
     4. Toxicity analyzer — detects hate/aggression in AI-generated text.
     """
     result = _response_graph.invoke({"response_text": response_text, "visited": []})
-    return AgentExecution(decision=result["decision"], graph_trace=result.get("visited", []))
+    return AgentExecution(
+        decision=result["decision"], graph_trace=result.get("visited", [])
+    )

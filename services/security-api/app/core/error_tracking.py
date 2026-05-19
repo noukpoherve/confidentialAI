@@ -7,17 +7,28 @@ Rules:
 - User prompts NEVER transit to GlitchTip.
 - API keys and tokens are filtered before sending.
 """
+
 from __future__ import annotations
 
 import logging
 
 logger = logging.getLogger(__name__)
 
-_SENSITIVE_KEYS = frozenset({
-    "password", "api_key", "apikey", "token", "secret",
-    "authorization", "llm_api_key", "openai_api_key",
-    "auth_secret_key", "jwt", "bearer",
-})
+_SENSITIVE_KEYS = frozenset(
+    {
+        "password",
+        "api_key",
+        "apikey",
+        "token",
+        "secret",
+        "authorization",
+        "llm_api_key",
+        "openai_api_key",
+        "auth_secret_key",
+        "jwt",
+        "bearer",
+    }
+)
 
 
 def init_sentry(dsn: str, environment: str, release: str = "0.1.0") -> None:

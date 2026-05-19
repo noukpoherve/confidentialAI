@@ -9,20 +9,23 @@ import pytest
 from app.core.detectors import detect_sensitive_content
 from app.core.policy_engine import analyze_prompt
 
-
 # ════════════════════════════════════════════════════════════════════════════
 # RÉGRESSION #1 — SWIFT_BIC faux positif sur mots communs en minuscules
 # Bug : le mot "frustrating" était détecté comme code BIC (FRUS=bank, TR=Turquie,
 #        AT=location, ING=branch). Fix : rejeter les tokens en minuscules.
 # ════════════════════════════════════════════════════════════════════════════
 
-@pytest.mark.parametrize("word", [
-    "frustrating",
-    "outstanding",
-    "interesting",
-    "misleading",
-    "processing",
-])
+
+@pytest.mark.parametrize(
+    "word",
+    [
+        "frustrating",
+        "outstanding",
+        "interesting",
+        "misleading",
+        "processing",
+    ],
+)
 def test_no_swift_bic_false_positive_on_common_english_words(word):
     """
     Common English words ending in -ing must NOT be detected as SWIFT BIC codes.
@@ -48,6 +51,7 @@ def test_real_swift_bic_still_detected_after_fix():
 # Ces patterns n'avaient aucun test dédié.
 # ════════════════════════════════════════════════════════════════════════════
 
+
 def test_iban_fr_detected():
     """Standard French IBAN must be detected."""
     hits = detect_sensitive_content("Mon IBAN : FR7630006000011234567890189")
@@ -71,7 +75,9 @@ def test_iban_not_triggered_by_random_numbers():
 
 def test_source_code_detected_python_import():
     """Python import statements must be detected as SOURCE_CODE."""
-    hits = detect_sensitive_content("import os\nfrom config import settings\nprint('hello')")
+    hits = detect_sensitive_content(
+        "import os\nfrom config import settings\nprint('hello')"
+    )
     types = [h.hit_type for h in hits]
     assert "SOURCE_CODE" in types
 
@@ -117,6 +123,7 @@ def test_password_detected_in_english():
 # CONTRATS DE COMPORTEMENT — vérifications de haut niveau
 # Ces tests vérifient les comportements critiques du produit.
 # ════════════════════════════════════════════════════════════════════════════
+
 
 def test_clean_technical_prompt_is_allowed():
     """A clean, professional technical question must always be ALLOW."""

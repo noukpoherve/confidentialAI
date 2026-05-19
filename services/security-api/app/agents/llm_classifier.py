@@ -126,7 +126,9 @@ def _call_classifier(text: str, *, response_moral: bool = False) -> dict | None:
         "Authorization": f"Bearer {settings.llm_classifier_api_key}",
         "Content-Type": "application/json",
     }
-    user_content = _build_response_moral_prompt(text) if response_moral else _build_prompt(text)
+    user_content = (
+        _build_response_moral_prompt(text) if response_moral else _build_prompt(text)
+    )
     body = {
         "model": settings.llm_classifier_model,
         "temperature": 0,
@@ -140,10 +142,14 @@ def _call_classifier(text: str, *, response_moral: bool = False) -> dict | None:
     for attempt in range(_MAX_RETRIES + 1):
         if attempt > 0:
             delay = _RETRY_BACKOFF_BASE * (2 ** (attempt - 1))
-            logger.debug("LLM classifier retry %d/%d after %.1fs", attempt, _MAX_RETRIES, delay)
+            logger.debug(
+                "LLM classifier retry %d/%d after %.1fs", attempt, _MAX_RETRIES, delay
+            )
             time.sleep(delay)
         try:
-            with httpx.Client(timeout=settings.llm_classifier_timeout_seconds) as client:
+            with httpx.Client(
+                timeout=settings.llm_classifier_timeout_seconds
+            ) as client:
                 response = client.post(url, headers=headers, json=body)
             if response.status_code == 429:
                 # Rate-limited by upstream — retry with backoff.
@@ -152,7 +158,9 @@ def _call_classifier(text: str, *, response_moral: bool = False) -> dict | None:
             if not response.is_success:
                 logger.warning(
                     "LLM classifier HTTP %d (attempt %d/%d)",
-                    response.status_code, attempt + 1, _MAX_RETRIES + 1,
+                    response.status_code,
+                    attempt + 1,
+                    _MAX_RETRIES + 1,
                 )
                 return None
             payload = response.json()
@@ -160,13 +168,22 @@ def _call_classifier(text: str, *, response_moral: bool = False) -> dict | None:
             return _safe_parse_json(content)
         except httpx.TimeoutException as exc:
             last_exc = exc
-            logger.debug("LLM classifier timeout (attempt %d/%d)", attempt + 1, _MAX_RETRIES + 1)
+            logger.debug(
+                "LLM classifier timeout (attempt %d/%d)", attempt + 1, _MAX_RETRIES + 1
+            )
         except Exception as exc:
             last_exc = exc
-            logger.debug("LLM classifier error (attempt %d/%d): %s", attempt + 1, _MAX_RETRIES + 1, exc)
+            logger.debug(
+                "LLM classifier error (attempt %d/%d): %s",
+                attempt + 1,
+                _MAX_RETRIES + 1,
+                exc,
+            )
 
     if last_exc:
-        logger.warning("LLM classifier failed after %d attempts: %s", _MAX_RETRIES + 1, last_exc)
+        logger.warning(
+            "LLM classifier failed after %d attempts: %s", _MAX_RETRIES + 1, last_exc
+        )
     return None
 
 
@@ -198,7 +215,9 @@ def _apply_llm_escalation(
 
     severity = str(result.get("severity", "medium")).lower()
     confidence = max(0.0, min(1.0, _to_float(result.get("confidence"), 0.7)))
-    reason = str(result.get("reason", f"{reason_prefix} flagged potentially sensitive content.")).strip()
+    reason = str(
+        result.get("reason", f"{reason_prefix} flagged potentially sensitive content.")
+    ).strip()
     categories = result.get("categories", [])
     if not isinstance(categories, list):
         categories = []
@@ -225,7 +244,9 @@ def _apply_llm_escalation(
             decision.action = "ANONYMIZE"
 
     if categories:
-        decision.reasons.append(f"{categories_label}: {', '.join(str(c) for c in categories[:6])}")
+        decision.reasons.append(
+            f"{categories_label}: {', '.join(str(c) for c in categories[:6])}"
+        )
 
     # Build redactions from LLM-identified fragments.
     # The regex layer may not have matched anything (e.g. PII_COMBINATION, CONFIDENTIAL_BUSINESS).
@@ -235,7 +256,9 @@ def _apply_llm_escalation(
         category_label = categories[0] if categories else default_category
         for fragment in fragments:
             fragment = str(fragment).strip()
-            already_covered = any(r.get("original") == fragment for r in decision.redactions)
+            already_covered = any(
+                r.get("original") == fragment for r in decision.redactions
+            )
             if fragment and fragment in text and not already_covered:
                 decision.redactions.append(
                     {
@@ -248,9 +271,13 @@ def _apply_llm_escalation(
     return decision
 
 
-def _escalate_decision(decision: PolicyDecision, result: dict, text: str) -> PolicyDecision:
+def _escalate_decision(
+    decision: PolicyDecision, result: dict, text: str
+) -> PolicyDecision:
     return _apply_llm_escalation(
-        decision, result, text,
+        decision,
+        result,
+        text,
         flag_key="sensitive",
         detection_type="LLM_SENSITIVE",
         reason_prefix="LLM classifier",
@@ -259,9 +286,13 @@ def _escalate_decision(decision: PolicyDecision, result: dict, text: str) -> Pol
     )
 
 
-def _escalate_response_moral_decision(decision: PolicyDecision, result: dict, text: str) -> PolicyDecision:
+def _escalate_response_moral_decision(
+    decision: PolicyDecision, result: dict, text: str
+) -> PolicyDecision:
     return _apply_llm_escalation(
-        decision, result, text,
+        decision,
+        result,
+        text,
         flag_key="harmful",
         detection_type="LLM_HARMFUL_CONTENT",
         reason_prefix="LLM moral classifier",

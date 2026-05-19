@@ -121,7 +121,12 @@ def upsert_incident_vector(
             client.upsert(collection_name=settings.qdrant_collection, points=[point])
             return True
         except Exception as exc:
-            logger.debug("Qdrant upsert failed (attempt %d/%d): %s", attempt + 1, _MAX_RETRIES + 1, exc)
+            logger.debug(
+                "Qdrant upsert failed (attempt %d/%d): %s",
+                attempt + 1,
+                _MAX_RETRIES + 1,
+                exc,
+            )
     return False
 
 
@@ -154,7 +159,12 @@ def search_similar_incident(query_text: str) -> tuple[float, dict[str, Any]] | N
             payload = h.payload or {}
             return (float(h.score), payload)
         except Exception as exc:
-            logger.debug("Qdrant search failed (attempt %d/%d): %s", attempt + 1, _MAX_RETRIES + 1, exc)
+            logger.debug(
+                "Qdrant search failed (attempt %d/%d): %s",
+                attempt + 1,
+                _MAX_RETRIES + 1,
+                exc,
+            )
     return None
 
 

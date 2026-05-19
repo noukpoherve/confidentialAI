@@ -100,6 +100,7 @@ Docker packages the application and all its dependencies into a single portable 
 "works on my machine" → "works everywhere."
 
 #### Multi-stage build (Dockerfile)
+
 ```dockerfile
 # Stage 1: builder — install deps, download spaCy models
 FROM python:3.11-slim AS builder
@@ -109,6 +110,7 @@ FROM python:3.11-slim AS builder
 FROM python:3.11-slim AS runtime
 COPY --from=builder ...
 ```
+
 Result: image ~3× smaller, faster to pull and start.
 
 ---
@@ -118,6 +120,7 @@ Result: image ~3× smaller, faster to pull and start.
 **File:** [.github/workflows/ci.yml](.github/workflows/ci.yml)
 
 **Triggers:**
+
 - Push or PR touching `.github/workflows/ci.yml` → CI gate (echo checkpoint)
 - Push of a `v*.*.*` tag → full release flow
 - Manual dispatch → manual release build
@@ -135,6 +138,7 @@ git push origin v1.2.3
 ```
 
 **How to trigger a release:**
+
 ```bash
 git tag v1.2.3 -m "Release v1.2.3"
 git push origin v1.2.3
@@ -150,12 +154,13 @@ Go to: **GitHub → your repo → Settings → Secrets and variables → Actions
 
 ### Koyeb (API deployment)
 
-| Secret | Description | Where to find |
-|---|---|---|
-| `KOYEB_API_KEY` | Koyeb API key | app.koyeb.com → Account → API Keys |
-| `KOYEB_SERVICE_ID` | Service identifier | Koyeb → your service → URL |
+| Secret             | Description        | Where to find                      |
+| ------------------ | ------------------ | ---------------------------------- |
+| `KOYEB_API_KEY`    | Koyeb API key      | app.koyeb.com → Account → API Keys |
+| `KOYEB_SERVICE_ID` | Service identifier | Koyeb → your service → URL         |
 
 **First-time Koyeb setup:**
+
 1. Go to app.koyeb.com → Create Service → Docker
 2. Image: `ghcr.io/YOUR-GITHUB-USERNAME/YOUR-REPO/security-api:latest`
 3. Port: `8080`
@@ -165,13 +170,14 @@ Go to: **GitHub → your repo → Settings → Secrets and variables → Actions
 
 ### Vercel (Dashboard deployment)
 
-| Secret | Description | Where to find |
-|---|---|---|
-| `VERCEL_TOKEN` | Vercel personal token | vercel.com → Settings → Tokens |
-| `VERCEL_ORG_ID` | Team / org ID | vercel.com/account → Settings → Team ID |
-| `VERCEL_PROJECT_ID` | Project ID | `.vercel/project.json` after `vercel link` |
+| Secret              | Description           | Where to find                              |
+| ------------------- | --------------------- | ------------------------------------------ |
+| `VERCEL_TOKEN`      | Vercel personal token | vercel.com → Settings → Tokens             |
+| `VERCEL_ORG_ID`     | Team / org ID         | vercel.com/account → Settings → Team ID    |
+| `VERCEL_PROJECT_ID` | Project ID            | `.vercel/project.json` after `vercel link` |
 
 **Link your Vercel project:**
+
 ```bash
 npm i -g vercel
 cd apps/admin-dashboard
@@ -217,6 +223,7 @@ fix/xxx       ← Bug fix branches
 **Golden rule:** never push directly to `main`.
 
 **Daily workflow:**
+
 ```bash
 git checkout develop
 git pull
@@ -243,15 +250,16 @@ git push v1.2.3        → full extension release build + GitHub Release
 
 The backend enforces four automated gates on every push:
 
-| Tool | Role | Config |
-|---|---|---|
-| `black` | Formatting (non-negotiable style) | `pyproject.toml [tool.black]` |
-| `ruff` | Fast linting (replaces flake8 + isort) | `pyproject.toml [tool.ruff]` |
-| `mypy` | Static type checking | `pyproject.toml [tool.mypy]` |
-| `bandit` | Security vulnerability scanning | `-ll` flag (HIGH severity only) |
-| `pytest` | Unit tests + coverage report (XML + terminal) | `pyproject.toml [tool.pytest]` |
+| Tool     | Role                                          | Config                          |
+| -------- | --------------------------------------------- | ------------------------------- |
+| `black`  | Formatting (non-negotiable style)             | `pyproject.toml [tool.black]`   |
+| `ruff`   | Fast linting (replaces flake8 + isort)        | `pyproject.toml [tool.ruff]`    |
+| `mypy`   | Static type checking                          | `pyproject.toml [tool.mypy]`    |
+| `bandit` | Security vulnerability scanning               | `-ll` flag (HIGH severity only) |
+| `pytest` | Unit tests + coverage report (XML + terminal) | `pyproject.toml [tool.pytest]`  |
 
 **Run locally before pushing:**
+
 ```bash
 cd services/security-api
 uv run black app/ tests/
@@ -262,6 +270,7 @@ uv run pytest tests/ -v --cov=app
 ```
 
 **After adding new dev dependencies**, update the lockfile:
+
 ```bash
 uv lock
 ```

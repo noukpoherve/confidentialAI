@@ -1,5 +1,9 @@
 # confidential-Agent
 
+[![Frontend](https://github.com/noukpoherve/confidentialAI/actions/workflows/frontend.yml/badge.svg)](https://github.com/noukpoherve/confidentialAI/actions/workflows/frontend.yml)
+[![Backend](https://github.com/noukpoherve/confidentialAI/actions/workflows/backend.yml/badge.svg)](https://github.com/noukpoherve/confidentialAI/actions/workflows/backend.yml)
+[![CI / Release](https://github.com/noukpoherve/confidentialAI/actions/workflows/ci.yml/badge.svg)](https://github.com/noukpoherve/confidentialAI/actions/workflows/ci.yml)
+
 Monorepo for building a user-side DLP (Data Loss Prevention) guardrail for
 generative AI platforms (ChatGPT, Claude, Gemini, and others).
 

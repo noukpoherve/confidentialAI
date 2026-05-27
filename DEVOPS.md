@@ -222,12 +222,12 @@ cd confidential-agent
 
 In GitHub → your repo → **Settings → Secrets and variables → Actions**, create:
 
-| Secret | Value |
-|---|---|
-| `KOYEB_API_KEY` | Koyeb → Account → API Keys |
-| `KOYEB_SERVICE_ID` | Koyeb → your service → copy from URL |
-| `VERCEL_TOKEN` | vercel.com → Settings → Tokens |
-| `VERCEL_ORG_ID` | vercel.com/account → Settings → Team ID |
+| Secret              | Value                                                                         |
+| ------------------- | ----------------------------------------------------------------------------- |
+| `KOYEB_API_KEY`     | Koyeb → Account → API Keys                                                    |
+| `KOYEB_SERVICE_ID`  | Koyeb → your service → copy from URL                                          |
+| `VERCEL_TOKEN`      | vercel.com → Settings → Tokens                                                |
+| `VERCEL_ORG_ID`     | vercel.com/account → Settings → Team ID                                       |
 | `VERCEL_PROJECT_ID` | run `vercel link` in `apps/admin-dashboard`, then read `.vercel/project.json` |
 
 ### Step 2 — Create the Koyeb service (first deploy is manual)
@@ -261,6 +261,7 @@ cat .vercel/project.json   # copy orgId → VERCEL_ORG_ID, projectId → VERCEL_
 ```
 
 Add the Vercel environment variable in the Vercel dashboard:
+
 ```
 NEXT_PUBLIC_API_URL=https://your-service.koyeb.app
 ```
@@ -273,6 +274,7 @@ git push origin main
 ```
 
 Expected outcome:
+
 - `backend.yml` → black ✓, ruff ✓, mypy ✓, bandit ✓, pytest ✓, Docker push ✓, Koyeb redeploy ✓
 - `frontend.yml` → lint ✓, build ✓, vitest ✓, Vercel production deploy ✓
 
@@ -342,27 +344,27 @@ Commit messages are parsed by `release-it` to generate `CHANGELOG.md` automatica
 [optional footer: Closes #N, Refs #N]
 ```
 
-| Type | When to use |
-|---|---|
-| `feat` | New feature visible to users |
-| `fix` | Bug fix |
-| `perf` | Performance improvement (no behavior change) |
-| `refactor` | Code restructuring (no behavior change) |
-| `test` | Adding or updating tests |
-| `ci` | Changes to CI/CD workflows |
-| `chore` | Tooling, deps, config (not shipped to users) |
-| `docs` | Documentation only |
+| Type       | When to use                                  |
+| ---------- | -------------------------------------------- |
+| `feat`     | New feature visible to users                 |
+| `fix`      | Bug fix                                      |
+| `perf`     | Performance improvement (no behavior change) |
+| `refactor` | Code restructuring (no behavior change)      |
+| `test`     | Adding or updating tests                     |
+| `ci`       | Changes to CI/CD workflows                   |
+| `chore`    | Tooling, deps, config (not shipped to users) |
+| `docs`     | Documentation only                           |
 
 ### Linking to GitHub Issues
 
 Add a footer to your commit message or PR description:
 
-| Keyword | Effect on merge to default branch |
-|---|---|
-| `Closes #42` | Automatically closes issue #42 |
-| `Fixes #42` | Same — alternative spelling |
-| `Resolves #42` | Same — alternative spelling |
-| `Refs #42` | Creates a link but does not close the issue |
+| Keyword        | Effect on merge to default branch           |
+| -------------- | ------------------------------------------- |
+| `Closes #42`   | Automatically closes issue #42              |
+| `Fixes #42`    | Same — alternative spelling                 |
+| `Resolves #42` | Same — alternative spelling                 |
+| `Refs #42`     | Creates a link but does not close the issue |
 
 **Examples:**
 
@@ -388,6 +390,7 @@ renders a direct link to the issue and closes it automatically on merge:
 
 ```markdown
 ## Summary
+
 - Add bandit static analysis to the backend CI job
 - Configure HIGH severity threshold (`-ll`) to avoid noise
 
@@ -406,6 +409,7 @@ npm run release:major   # major bump
 ```
 
 `release-it` will:
+
 1. Bump the version in all `package.json` files and `pyproject.toml`
 2. Generate / append to `CHANGELOG.md` from conventional commit messages
 3. Create an annotated git tag `vX.Y.Z`
@@ -528,6 +532,249 @@ docker run -p 8080:8080 --env-file .env security-api-test
 
 ---
 
+## CI Enforcement Scenarios
+
+The pipeline enforces four behaviors automatically once branch protection rules
+are configured (see First-time Deployment Checklist → Step 5).
+
+---
+
+### Scenario 1 — Failing tests block the PR
+
+| | |
+|---|---|
+| **Trigger** | Any push to a PR branch that touches `services/security-api/**` |
+| **Workflow** | `backend.yml` |
+| **Check name in GitHub** | `Backend (Python API)` |
+| **Blocking condition** | Any pytest test exits non-zero |
+
+When a test fails, the `Run tests with coverage (pytest)` step exits with
+code 1. GitHub marks the required check as ❌ Failed and disables the
+merge button with:
+
+> _"Merge pull request — blocked by required status check."_
+
+The full test failure output — file, line number, assertion details — is
+visible under Actions → the failing run → `Run tests with coverage` step.
+No reviewer can bypass this without disabling branch protection.
+
+---
+
+### Scenario 2 — Coverage below threshold blocks the PR
+
+| | |
+|---|---|
+| **Trigger** | Same as Scenario 1 |
+| **Workflow** | `backend.yml` |
+| **Check name in GitHub** | `Backend (Python API)` |
+| **Active threshold** | **68 %** (current baseline: 68.86%) |
+| **Target threshold** | **70 %** — blocked by untested infrastructure modules (see below) |
+
+The pytest command runs with `--cov-fail-under=68`. If overall coverage
+of the `app/` package drops below the threshold, pytest exits with code 2
+and the step summary shows:
+
+```
+FAIL Required test coverage of 68% not reached. Total coverage: 65%
+```
+
+The check fails and blocks the merge — same gate as Scenario 1, different
+exit code. Adding new code without tests triggers this automatically.
+
+**Current coverage breakdown (baseline run — 119 passed, 1 skipped):**
+
+| Module | Coverage | Gap | Reason untested |
+|---|---|---|---|
+| `app/core/error_tracking.py` | 0% | 34 stmts | Sentry SDK — needs mock |
+| `app/services/embedding_service.py` | 23% | 50 stmts | Requires OpenAI API key |
+| `app/stores/vector_store.py` | 48% | 53 stmts | Requires running Qdrant |
+| `app/core/site_signal_store.py` | 39% | 35 stmts | MongoDB store, partially mocked |
+| `app/core/incident_store.py` | 40% | 33 stmts | MongoDB store, partially mocked |
+| `app/agents/asi.py` | 33% | 12 stmts | Telegram notifications |
+
+**To reach 70%:** 19 additional covered statements needed.
+Covering `error_tracking.py` alone (with Sentry SDK mocks) would clear the gap.
+Tracked in Possible Future Improvements below.
+
+---
+
+### Scenario 3 — All checks pass → merge becomes available
+
+| | |
+|---|---|
+| **Trigger** | All required checks on the PR complete successfully |
+| **Required checks** | `Backend (Python API)` · `Frontend (Dashboard + Extension)` |
+| **Behavior** | Merge button becomes available to authorized reviewers |
+
+Both checks must show ✅. A check is considered **skipped** (which counts
+as passing) when no files in its `paths` filter were modified — pushing a
+README change does not force a full backend CI run.
+
+If the repository requires at least one review, the merge button remains
+greyed out until a reviewer approves, even if all checks are green.
+
+---
+
+### Scenario 4 — Merge to main triggers automatic deployment
+
+| | |
+|---|---|
+| **Trigger** | PR merged into `main` (a `push` event on `main`) |
+| **Workflows** | `backend.yml` (conditional deploy steps) · `frontend.yml` (conditional deploy steps) |
+| **Expected SLA** | Both deployments live within **10 minutes** of merge |
+
+Deployment chain:
+
+```
+PR merged into main
+        │
+        ├─► backend.yml (if services/security-api/** changed)
+        │       docker build → push to ghcr.io/.../security-api:latest
+        │       POST /v1/services/{KOYEB_SERVICE_ID}/redeploy
+        │       Koyeb pulls new image → swaps containers
+        │
+        └─► frontend.yml (if apps/** changed)
+                vercel deploy --prod
+                Vercel builds Next.js → publishes to production URL
+```
+
+The Koyeb redeploy is **asynchronous**: the workflow step triggers it
+and confirms HTTP 2xx, but the actual container swap happens on Koyeb's
+infrastructure. Monitor the real-time swap in Koyeb → Service → Deployments.
+
+---
+
+## How to Test Each Scenario
+
+> These tests can be run on any non-protected branch — no need to touch `main`.
+> Use `test/scenario-N` branches and open PRs targeting `develop`.
+
+---
+
+### Test Scenario 1 — Break a pytest test
+
+```bash
+# 1. Create an isolated branch
+git checkout -b test/scenario-1-failing-test
+
+# 2. Add a deliberately failing test
+cat >> services/security-api/tests/test_ci_gate.py << 'EOF'
+def test_intentional_failure():
+    """Verify that CI blocks merge on test failure — delete after validating."""
+    assert False, "Intentional failure: Scenario 1 validation"
+EOF
+
+# 3. Commit and push
+git add services/security-api/tests/test_ci_gate.py
+git commit -m "test: intentional failure to verify CI blocking (Scenario 1)"
+git push origin test/scenario-1-failing-test
+```
+
+**Open a PR** targeting `develop`. Go to the PR → **Checks** tab.
+
+✅ Expected result:
+- `Backend (Python API)` → ❌ Failed
+- Step `Run tests with coverage (pytest)` shows the assertion error
+- Merge button is disabled
+
+**Cleanup:** delete `test_ci_gate.py`, push, verify the check turns ✅, close the PR.
+
+---
+
+### Test Scenario 2 — Drop coverage below 70%
+
+```bash
+# 1. Create an isolated branch
+git checkout -b test/scenario-2-drop-coverage
+
+# 2. Add a module with zero test coverage
+mkdir -p services/security-api/app/utils
+cat > services/security-api/app/utils/uncovered.py << 'EOF'
+# Module with no tests — drops overall coverage below threshold
+def complex_logic(x: int) -> int:
+    if x > 100:
+        return x * 2
+    elif x > 50:
+        return x + 10
+    else:
+        return x - 5
+EOF
+
+# 3. Commit and push
+git add services/security-api/app/utils/uncovered.py
+git commit -m "test: uncovered module to verify coverage gate (Scenario 2)"
+git push origin test/scenario-2-drop-coverage
+```
+
+**Open a PR** targeting `develop`.
+
+✅ Expected result:
+- `Backend (Python API)` → ❌ Failed
+- Step summary shows: `FAIL Required test coverage of 70% not reached.`
+- Merge button is disabled
+
+**Cleanup:** either add tests for `uncovered.py` or delete the file, push, verify coverage rises above 70%.
+
+---
+
+### Test Scenario 3 — All checks pass
+
+```bash
+# 1. Create a clean PR branch
+git checkout -b test/scenario-3-all-pass
+
+# 2. Make a valid, tested change (or just update a comment)
+# Example: update a docstring in an existing file
+git add .
+git commit -m "test: clean commit to verify full CI pass (Scenario 3)"
+git push origin test/scenario-3-all-pass
+```
+
+**Open a PR** targeting `develop`. Wait for all checks to complete.
+
+✅ Expected result:
+- `Backend (Python API)` → ✅ Passed (or ⏭ Skipped if no backend files changed)
+- `Frontend (Dashboard + Extension)` → ✅ Passed (or ⏭ Skipped if no frontend files changed)
+- Merge button is **available** (green) for an authorized reviewer
+
+---
+
+### Test Scenario 4 — Deployment on merge to main
+
+> ⚠️ This test requires valid Koyeb and Vercel secrets to be configured.
+> Only run this on a real merge to `main` — not on a test branch.
+
+```bash
+# 1. Merge a passing PR into main via the GitHub UI (not via CLI to respect checks)
+# 2. Go to GitHub → Actions → filter by branch "main"
+```
+
+**Monitor both workflows:**
+
+| Workflow | Steps to verify | Expected |
+|---|---|---|
+| `Backend` | `Build and push Docker image` | ✅ image pushed to GHCR |
+| `Backend` | `Deploy to Koyeb` | ✅ HTTP 2xx response |
+| `Frontend` | `Deploy dashboard — Production (main)` | ✅ Vercel deploy URL in step summary |
+
+**Verify the live services:**
+
+```bash
+# API health check
+curl https://your-service.koyeb.app/health
+# Expected: {"status": "ok", ...}
+
+# Dashboard (open in browser)
+open https://your-dashboard.vercel.app
+```
+
+✅ Expected result: both services reflect the merged changes within 10 minutes.
+
+If the `Deploy to Koyeb` step returns HTTP 2xx but the service is slow to swap,
+monitor in real time at: **Koyeb → your service → Deployments tab**.
+
+---
+
 ## Possible Future Improvements
 
 - [ ] **Slack / Discord notifications** on deployment failure
@@ -535,5 +782,8 @@ docker run -p 8080:8080 --env-file .env security-api-test
 - [ ] **Automatic rollback** — revert to previous image if health check fails
 - [ ] **Staging environment** — deploy `develop` to a Koyeb staging service before `main`
 - [ ] **Dependabot** — automated dependency updates
-- [ ] **pytest coverage gate** — fail if coverage drops below a threshold (e.g. 80%)
+- [ ] **mypy gate** — uncomment the mypy step in `backend.yml` once type annotations are complete
 - [ ] **Vitest coverage** — add `@vitest/coverage-v8` to the extension for HTML/XML reports
+- [x] **pytest coverage gate** — active at 68% (`--cov-fail-under=68`), baseline 68.86%
+- [ ] **Raise coverage threshold to 70%** — 19 statements needed; priority targets:
+  `error_tracking.py` (0%, mock Sentry SDK) · `asi.py` (33%, mock Telegram) · `incident_store.py` (40%)

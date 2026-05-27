@@ -1,0 +1,83 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Justfile — security-api task runner
+#
+# Usage:
+#   just            → list all available recipes
+#   just <recipe>   → run a specific recipe
+#   just ci         → run the full CI gate locally
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Use bash with strict mode: fail on error, unset vars, and pipe failures
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+# Default: print the list of available recipes when running `just` with no args
+default:
+    @just --list
+
+# ─── Development ─────────────────────────────────────────────────────────────
+
+# Start the FastAPI server in dev mode (hot-reload, port 8080)
+start:
+    uv run uvicorn app.main:app --reload --port 8080
+
+# Install all dependencies including the dev group
+install:
+    uv sync --group dev
+
+# ─── Formatting ──────────────────────────────────────────────────────────────
+
+# Auto-format the codebase with black (rewrites files in place)
+fmt:
+    uv run black app/ tests/
+
+# Check formatting without modifying any file — used in CI
+fmt-check:
+    uv run black --check app/ tests/
+
+# ─── Linting ─────────────────────────────────────────────────────────────────
+
+# Lint with ruff: style rules + import order + bugbear + pyupgrade
+lint:
+    uv run ruff check app/ tests/
+
+# Lint and auto-fix all ruff violations that can be fixed automatically
+lint-fix:
+    uv run ruff check app/ tests/ --fix
+
+# ─── Type Checking ───────────────────────────────────────────────────────────
+
+# Static type analysis with mypy (currently disabled in CI — see backend.yml)
+typecheck:
+    uv run mypy app/
+
+# ─── Security ────────────────────────────────────────────────────────────────
+
+# Full security report with bandit — shows LOW / MEDIUM / HIGH (informational only)
+security-report:
+    uv run bandit -r app/
+
+# Security scan used in CI — exits non-zero only on HIGH severity findings
+security:
+    uv run bandit -r app/ -ll
+
+# ─── Tests ───────────────────────────────────────────────────────────────────
+
+# Run the full test suite (no coverage)
+test:
+    uv run pytest tests/ -v --tb=short
+
+# Run tests + coverage report — fails if overall coverage drops below 70%
+# Current coverage: 75.27% — raised from 68 after adding unit tests for
+#   error_tracking.py (100%), asi.py (100%), auth.py (97%), stores (74-76%)
+test-cov:
+    uv run pytest tests/ -v --tb=short \
+        --cov=app \
+        --cov-report=xml \
+        --cov-report=term-missing \
+        --cov-fail-under=70
+
+# ─── CI Gate ─────────────────────────────────────────────────────────────────
+
+# Run all quality gates in the exact order used by the CI pipeline
+# Equivalent to: fmt-check → lint → security → test-cov
+ci: fmt-check lint security test-cov

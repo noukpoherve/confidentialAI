@@ -57,6 +57,9 @@ jobs:
       - name: Install uv
         run: pip install uv
 
+      - name: Install just
+        uses: extractions/setup-just@v2
+
       - name: Cache uv dependencies
         uses: actions/cache@v4
         with:
@@ -66,25 +69,25 @@ jobs:
 
       - name: Install dependencies
         working-directory: services/security-api
-        run: uv sync --group dev
+        run: just install
 
       # ── Quality gates ─────────────────────────────────────────────────────────
 
       - name: Format check (black)
         working-directory: services/security-api
-        run: uv run black --check app/ tests/
+        run: just fmt-check
 
       - name: Lint (ruff)
         working-directory: services/security-api
-        run: uv run ruff check app/ tests/
+        run: just lint
 
       # - name: Type check (mypy)
       #   working-directory: services/security-api
-      #   run: uv run mypy app/
+      #   run: just typecheck
 
       - name: Security scan (bandit — blocks on HIGH)
         working-directory: services/security-api
-        run: uv run bandit -r app/ -ll
+        run: just security
 
       - name: Run tests with coverage (pytest)
         working-directory: services/security-api
@@ -93,7 +96,8 @@ jobs:
           AUTH_SECRET_KEY: "test-secret-for-ci-only-minimum-32-chars"
           MONGODB_URI: "mongodb://localhost:27017"
           SPACY_ENABLED: "false"
-        run: uv run pytest tests/ -v --tb=short --cov=app --cov-report=xml --cov-report=term-missing
+        # Threshold: 70 (current coverage 75.27% — raised from 68 after adding unit tests)
+        run: just test-cov
 
       # ── Docker build + push (main only) ───────────────────────────────────────
 

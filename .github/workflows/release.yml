@@ -1,0 +1,201 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# RELEASE — Automatic Semantic Versioning (Monorepo)
+#
+# Trigger: push to main only (excluding the release commit itself)
+#
+# Full flow:
+#   1. Analyse commits since the last tag (conventional-changelog)
+#   2. No fix/feat/breaking commits → workflow exits cleanly, no error
+#   3. Otherwise:
+#      a. release-it --ci: bump package.json → sync-versions.js → CHANGELOG.md
+#                          → commit "chore: release vX.Y.Z" → tag vX.Y.Z
+#                          → GitHub Release with the changelog as body
+#      b. Build extension artifacts (Chrome / Firefox / Edge)
+#      c. Upload zips to the GitHub Release created above
+#
+# Versioning rules:
+#   fix:               → patch  (0.0.x)
+#   feat:              → minor  (0.x.0)
+#   feat!: / fix!: /   → major  (x.0.0)
+#   BREAKING CHANGE:
+#   chore:/docs:/test: → skip (no release)
+#
+# REQUIREMENTS:
+#   - GITHUB_TOKEN must have push access to main.
+#     If the branch is protected, add "github-actions[bot]" to the
+#     bypass list under Settings → Branches → branch protection rule.
+# ══════════════════════════════════════════════════════════════════════════════
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Semantic Release
+    runs-on: ubuntu-latest
+    # Skip the "chore: release vX.Y.Z" commit pushed by release-it
+    # to prevent an infinite trigger loop.
+    if: "!startsWith(github.event.head_commit.message, 'chore: release')"
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────────────
+      # fetch-depth: 0 required so release-it can read the full history
+      # and correctly detect the last tag.
+
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git identity
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+
+      # ── Tooling ───────────────────────────────────────────────────────────────
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install root dependencies
+        run: npm ci
+
+      # ── Releasable commit detection ───────────────────────────────────────────
+      # Scans history between the last tag and HEAD.
+      # fix / feat / perf / any commit with "!" or "BREAKING CHANGE" → release.
+      # chore / docs / test only → exit cleanly with no release.
+
+      - name: Check for releasable commits
+        id: check
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+          if [ -z "$LAST_TAG" ]; then
+            LOG_RANGE="HEAD"
+            echo "No previous tag found — scanning full history."
+          else
+            LOG_RANGE="${LAST_TAG}..HEAD"
+            echo "Scanning commits since ${LAST_TAG}..."
+          fi
+
+          # Include subject + body to capture BREAKING CHANGE footers
+          COMMITS=$(git log --pretty=format:"%s%n%b" $LOG_RANGE)
+
+          echo "--- Commits scanned ---"
+          echo "$COMMITS"
+          echo "-----------------------"
+
+          RELEASABLE=false
+
+          # fix/feat/perf with optional scope and optional breaking "!"
+          if echo "$COMMITS" | grep -qE "^(feat|fix|perf)(\(.+\))?(!)?: "; then
+            RELEASABLE=true
+          fi
+
+          # Any type with breaking change marker "type!:" or "type(scope)!:"
+          if echo "$COMMITS" | grep -qE "^[a-zA-Z]+(\(.+\))?!: "; then
+            RELEASABLE=true
+          fi
+
+          # "BREAKING CHANGE:" in commit body
+          if echo "$COMMITS" | grep -qi "^BREAKING CHANGE:"; then
+            RELEASABLE=true
+          fi
+
+          if [ "$RELEASABLE" = "true" ]; then
+            echo "needs_release=true" >> $GITHUB_OUTPUT
+            echo "Releasable commits detected — proceeding with release."
+          else
+            echo "needs_release=false" >> $GITHUB_OUTPUT
+            echo "Only chore/docs/test commits — no release needed."
+          fi
+
+      # ── Release via release-it ────────────────────────────────────────────────
+      # Runs in sequence automatically:
+      #   1. Determine next SemVer number from commit types
+      #   2. Bump root package.json
+      #   3. Hook after:bump → node scripts/sync-versions.js <version>
+      #      (propagates the version to all sub-packages + manifest.json)
+      #   4. Generate / update CHANGELOG.md
+      #   5. Commit "chore: release vX.Y.Z"
+      #   6. Git tag vX.Y.Z
+      #   7. Push commit + tag
+      #   8. Create GitHub Release with the changelog as the release body
+
+      - name: Run release-it
+        if: steps.check.outputs.needs_release == 'true'
+        id: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm run release -- --ci
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "Release created: v${NEW_VERSION}"
+
+      # ── Extension artifact build ──────────────────────────────────────────────
+
+      - name: Install extension dependencies
+        if: steps.check.outputs.needs_release == 'true'
+        working-directory: apps/browser-extension
+        run: npm ci
+
+      - name: Build extension — Chrome
+        if: steps.check.outputs.needs_release == 'true'
+        working-directory: apps/browser-extension
+        run: npm run build:extensions:chrome
+
+      - name: Build extension — Firefox
+        if: steps.check.outputs.needs_release == 'true'
+        working-directory: apps/browser-extension
+        run: npm run build:extensions:firefox
+
+      - name: Build extension — Edge
+        if: steps.check.outputs.needs_release == 'true'
+        working-directory: apps/browser-extension
+        run: npm run build:extensions:edge
+
+      - name: Package extensions as zips
+        if: steps.check.outputs.needs_release == 'true'
+        working-directory: apps/browser-extension
+        run: |
+          VERSION="v${{ steps.release.outputs.version }}"
+          for BROWSER in chrome firefox edge; do
+            ZIP="confidential-agent-extension-${BROWSER}-${VERSION}.zip"
+            (cd "dist/${BROWSER}" && zip -r "../../${ZIP}" .)
+            echo "Packaged: ${ZIP}"
+          done
+
+      # Uses the gh CLI to append zips to the GitHub Release already created
+      # by release-it, without overwriting the body (changelog) or metadata.
+
+      - name: Upload zips to GitHub Release
+        if: steps.check.outputs.needs_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "v${{ steps.release.outputs.version }}" \
+            apps/browser-extension/confidential-agent-extension-*.zip \
+            --clobber
+
+      # ── Summary ───────────────────────────────────────────────────────────────
+
+      - name: Release skipped
+        if: steps.check.outputs.needs_release == 'false'
+        run: |
+          echo "No fix/feat/breaking commits found since the last tag."
+          echo "Workflow completed cleanly with no release created."

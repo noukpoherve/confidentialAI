@@ -1,24 +1,10 @@
 # ══════════════════════════════════════════════════════════════════════════════
-# CI — Build, Release & Gate
+# CI — Validation gate
 #
-# Triggers:
-#   push to main/develop (ci.yml only) → CI gate checkpoint
-#   merge develop → main               → auto-creates a date tag v2026.05.28
-#                                         which then triggers the release build
-#   push of v*.*.* tag                 → full release: 3 extension zips + GitHub Release
-#   pull_request to main/develop       → CI gate checkpoint
-#   workflow_dispatch                  → manual release build
+# Fires only when this workflow file itself changes on main or develop.
 #
-# AUTO-RELEASE FLOW (on every merge to main):
-#   1. Frontend or Backend workflow completes on main (workflow_run event)
-#   2. This workflow creates tag v$(date +'%Y.%m.%d'), e.g. v2026.05.28
-#      If the tag already exists today, it is skipped (one auto-release per day max).
-#   3. Pushing the tag fires this workflow again via push: tags: v*.*.*
-#   4. That second run builds Chrome/Firefox/Edge zips + GitHub Release.
-#
-# MANUAL RELEASE:
-#   git tag v1.2.3 -m "Release v1.2.3" && git push origin v1.2.3
-#   — or — use workflow_dispatch with create_release=true
+# All release logic (SemVer tags, CHANGELOG, GitHub Release, extension
+# artifacts) is fully delegated to release.yml.
 # ══════════════════════════════════════════════════════════════════════════════
 
 name: CI
@@ -28,155 +14,23 @@ on:
     branches: [main, develop]
     paths:
       - ".github/workflows/ci.yml"
-    tags:
-      - "v*.*.*"
   pull_request:
     branches: [main, develop]
     paths:
       - ".github/workflows/ci.yml"
-  # Fires when Frontend or Backend workflow completes on main → auto-release
-  workflow_run:
-    workflows: ["Frontend", "Backend"]
-    types: [completed]
-    branches: [main]
-  workflow_dispatch:
-    inputs:
-      create_release:
-        description: "Create a GitHub Release with extension artifacts?"
-        type: boolean
-        default: false
 
-# Auto-release runs share a group keyed on the triggering commit so only one
-# proceeds when both Frontend and Backend complete for the same merge.
 concurrency:
-  group: >-
-    ${{ github.workflow }}-${{
-      github.event_name == 'workflow_run'
-      && github.event.workflow_run.head_sha
-      || github.ref
-    }}
-  cancel-in-progress: ${{ github.event_name == 'workflow_run' }}
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 jobs:
   ci:
-    name: "CI / Build / Release"
+    name: CI Gate
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          # GITHUB_TOKEN needed to push the auto-generated date tag back to the repo
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      # ── CI gate ───────────────────────────────────────────────────────────────
-
       - name: CI gate
-        if: >-
-          !startsWith(github.ref, 'refs/tags/') &&
-          github.event_name != 'workflow_run'
-        run: echo "CI gate passed — see frontend and backend workflow results."
-
-      # ── Auto-release: create date tag on every merge to main ─────────────────
-      # Triggered by workflow_run (Frontend or Backend completing on main).
-      # Creates v2026.05.28 and pushes it — that tag push then fires this workflow
-      # again via push: tags: v*.*.* and builds the actual release artifacts.
-      # If the tag already exists (second merge on the same day), it is skipped.
-
-      - name: Create date-based release tag
-        if: >-
-          github.event_name == 'workflow_run' &&
-          github.event.workflow_run.conclusion == 'success'
-        run: |
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
-          git fetch --tags --quiet
-          DATE_TAG="v$(date +'%Y.%m.%d')"
-          if git rev-parse "$DATE_TAG" >/dev/null 2>&1; then
-            echo "Tag $DATE_TAG already exists — release was already created today."
-            exit 0
-          fi
-          git tag "$DATE_TAG" -m "Auto-release $DATE_TAG — merged to main"
-          git push origin "$DATE_TAG"
-          echo "Created and pushed tag: $DATE_TAG"
-
-      # ── Extension build for all browsers ─────────────────────────────────────
-      # Runs on tag pushes (v*.*.*) or manual dispatch with create_release=true.
-
-      - name: Install extension dependencies
-        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
-        working-directory: apps/browser-extension
-        run: npm ci
-
-      - name: Run extension tests
-        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
-        working-directory: apps/browser-extension
-        run: npm test -- --run
-
-      - name: Build extension — Chrome
-        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
-        working-directory: apps/browser-extension
-        run: npm run build:extensions:chrome
-
-      - name: Build extension — Firefox
-        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
-        working-directory: apps/browser-extension
-        run: npm run build:extensions:firefox
-
-      - name: Build extension — Edge
-        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
-        working-directory: apps/browser-extension
-        run: npm run build:extensions:edge
-
-      - name: Package extensions as zips
-        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
-        working-directory: apps/browser-extension
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            VERSION="${{ github.ref_name }}"
-          else
-            VERSION="v$(node -p "require('./package.json').version")"
-          fi
-
-          for BROWSER in chrome firefox edge; do
-            ZIP="confidential-agent-extension-${BROWSER}-${VERSION}.zip"
-            cd dist/${BROWSER} && zip -r "../../${ZIP}" . && cd ../..
-            echo "Packaged: ${ZIP}"
-          done
-
-      - name: Upload extension artifacts
-        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: extension-release-builds
-          path: apps/browser-extension/confidential-agent-extension-*.zip
-          retention-days: 90
-
-      # ── GitHub Release (tags only) ────────────────────────────────────────────
-
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: "Release ${{ github.ref_name }}"
-          draft: false
-          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}
-          generate_release_notes: true
-          files: apps/browser-extension/confidential-agent-extension-*.zip
-          body: |
-            ## Browser Extension ${{ github.ref_name }}
-
-            ### Installation
-            - **Chrome / Edge**: `chrome://extensions` → Developer mode → Load unpacked
-            - **Firefox**: `about:debugging` → This Firefox → Load Temporary Add-on
+        run: echo "CI gate passed — see frontend.yml and backend.yml for build results."

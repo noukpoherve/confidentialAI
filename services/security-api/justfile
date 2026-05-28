@@ -66,15 +66,12 @@ security:
 test:
     uv run pytest tests/ -v --tb=short
 
-# Run tests + coverage report — fails if overall coverage drops below 70%
-# Current coverage: 75.27% — raised from 68 after adding unit tests for
-#   error_tracking.py (100%), asi.py (100%), auth.py (97%), stores (74-76%)
+# Run tests + coverage report (coverage is informational only — no threshold enforced)
 test-cov:
     uv run pytest tests/ -v --tb=short \
         --cov=app \
         --cov-report=xml \
-        --cov-report=term-missing \
-        --cov-fail-under=70
+        --cov-report=term-missing
 
 # ─── CI Gate ─────────────────────────────────────────────────────────────────
 

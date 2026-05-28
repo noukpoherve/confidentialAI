@@ -15,7 +15,7 @@ name: Frontend
 
 on:
   push:
-    branches: ["**"]
+    branches: [main, develop]
     paths:
       - "apps/admin-dashboard/**"
       - "apps/browser-extension/**"

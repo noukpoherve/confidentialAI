@@ -20,7 +20,7 @@ name: Backend
 
 on:
   push:
-    branches: ["**"]
+    branches: [main, develop]
     paths:
       - "services/security-api/**"
       - ".github/workflows/backend.yml"
@@ -96,7 +96,6 @@ jobs:
           AUTH_SECRET_KEY: "test-secret-for-ci-only-minimum-32-chars"
           MONGODB_URI: "mongodb://localhost:27017"
           SPACY_ENABLED: "false"
-        # Threshold: 70 (current coverage 75.27% — raised from 68 after adding unit tests)
         run: just test-cov
 
       # ── Docker build + push (main only) ───────────────────────────────────────

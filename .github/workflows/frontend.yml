@@ -106,6 +106,22 @@ jobs:
           path: apps/browser-extension/confidential-agent-extension-*.zip
           retention-days: 30
 
+      # ── E2E smoke tests (Playwright) ─────────────────────────────────────────
+      # Runs against the production build already produced above.
+      # Only @smoke-tagged tests are executed — they target static/auth pages
+      # that render without a running backend, so no extra service is needed.
+
+      - name: Install Playwright browsers
+        working-directory: apps/admin-dashboard
+        run: npx playwright install chromium --with-deps
+
+      - name: Run E2E smoke tests (Playwright)
+        working-directory: apps/admin-dashboard
+        env:
+          CI: "true"
+          NEXT_PUBLIC_API_URL: "http://localhost:8080"
+        run: npx playwright test --grep @smoke
+
       # ── Deploy Dashboard ─────────────────────────────────────────────────────
 
       - name: Install Vercel CLI

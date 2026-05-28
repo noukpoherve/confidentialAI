@@ -7,7 +7,9 @@
     "requireUpstream": false
   },
   "github": {
-    "release": false
+    "release": true,
+    "releaseName": "Release v${version}",
+    "tokenRef": "GITHUB_TOKEN"
   },
   "npm": {
     "publish": false

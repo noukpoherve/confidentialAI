@@ -13,14 +13,11 @@ except Exception:  # pragma: no cover
 
 
 class SiteSignalStore(Protocol):
-    def save_signal(self, signal: dict) -> None:
-        ...
+    def save_signal(self, signal: dict) -> None: ...
 
-    def list_signals(self, limit: int) -> list[dict]:
-        ...
+    def list_signals(self, limit: int) -> list[dict]: ...
 
-    def aggregate_failures_by_site(self, limit: int) -> list[dict]:
-        ...
+    def aggregate_failures_by_site(self, limit: int) -> list[dict]: ...
 
 
 @dataclass
@@ -34,12 +31,16 @@ class InMemorySiteSignalStore:
         return self.items[: max(limit, 0)]
 
     def aggregate_failures_by_site(self, limit: int) -> list[dict]:
-        grouped: dict[str, dict] = defaultdict(lambda: {"count": 0, "events": defaultdict(int), "lastSeenAt": ""})
+        grouped: dict[str, dict] = defaultdict(
+            lambda: {"count": 0, "events": defaultdict(int), "lastSeenAt": ""}
+        )
         for item in self.items:
             host = str(item.get("hostname", "unknown"))
             grouped[host]["count"] += 1
             grouped[host]["events"][str(item.get("eventType", "UNKNOWN"))] += 1
-            grouped[host]["lastSeenAt"] = max(grouped[host]["lastSeenAt"], str(item.get("createdAt", "")))
+            grouped[host]["lastSeenAt"] = max(
+                grouped[host]["lastSeenAt"], str(item.get("createdAt", ""))
+            )
 
         rows = [
             {
@@ -66,7 +67,11 @@ class MongoSiteSignalStore:
         self.collection.insert_one(dict(signal))
 
     def list_signals(self, limit: int) -> list[dict]:
-        cursor = self.collection.find({}, {"_id": 0}).sort("createdAt", -1).limit(max(limit, 0))
+        cursor = (
+            self.collection.find({}, {"_id": 0})
+            .sort("createdAt", -1)
+            .limit(max(limit, 0))
+        )
         return list(cursor)
 
     def aggregate_failures_by_site(self, limit: int) -> list[dict]:

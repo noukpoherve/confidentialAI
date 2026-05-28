@@ -14,11 +14,9 @@ except Exception:  # pragma: no cover - optional dependency at runtime
 
 
 class IncidentStore(Protocol):
-    def save_incident(self, incident: dict) -> None:
-        ...
+    def save_incident(self, incident: dict) -> None: ...
 
-    def list_incidents(self, limit: int, offset: int = 0) -> list[dict]:
-        ...
+    def list_incidents(self, limit: int, offset: int = 0) -> list[dict]: ...
 
 
 @dataclass
@@ -29,7 +27,9 @@ class InMemoryIncidentStore:
     """
 
     items: list[dict] = field(default_factory=list)
-    _lock: threading.RLock = field(default_factory=threading.RLock, repr=False, compare=False)
+    _lock: threading.RLock = field(
+        default_factory=threading.RLock, repr=False, compare=False
+    )
 
     def save_incident(self, incident: dict) -> None:
         document = dict(incident)

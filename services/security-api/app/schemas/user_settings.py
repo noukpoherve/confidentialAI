@@ -10,7 +10,9 @@ class UserPlatformEntry(BaseModel):
     # If set, only this path prefix on the host is protected (leading slash, no trailing slash).
     pathPrefix: str | None = None
     # "textAnalysis" | "imageModeration"
-    features: list[str] = Field(default_factory=lambda: ["textAnalysis", "imageModeration"])
+    features: list[str] = Field(
+        default_factory=lambda: ["textAnalysis", "imageModeration"]
+    )
 
 
 class UserSettingsPayload(BaseModel):

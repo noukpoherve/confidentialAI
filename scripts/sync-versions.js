@@ -39,4 +39,12 @@ pyproject = pyproject.replace(/^version = ".*"$/m, `version = "${version}"`);
 fs.writeFileSync(pyprojectPath, pyproject);
 console.log(`  bumped services/security-api/pyproject.toml  →  ${version}`);
 
+// ── Browser extension manifest (manifest_version 3) ───────────────────────
+// Chrome/Firefox require a plain X.Y.Z integer-only version string.
+const manifestPath = path.join(root, "apps/browser-extension/manifest.json");
+const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+manifest.version = version;
+fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+console.log(`  bumped apps/browser-extension/manifest.json  →  ${version}`);
+
 console.log(`\nAll packages synced to v${version}`);

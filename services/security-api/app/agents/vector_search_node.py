@@ -44,7 +44,9 @@ def _apply_vector_hit(
     return decision
 
 
-def run_prompt_vector_search(text: str, decision: PolicyDecision) -> tuple[PolicyDecision, bool]:
+def run_prompt_vector_search(
+    text: str, decision: PolicyDecision
+) -> tuple[PolicyDecision, bool]:
     """
     Returns (updated decision, skip_llm_classifier).
     When skip_llm_classifier is True, the LLM classifier node should be bypassed.

@@ -30,7 +30,9 @@ def test_vector_search_disabled_no_skip(monkeypatch: pytest.MonkeyPatch) -> None
     assert d.action == "ALLOW"
 
 
-def test_vector_search_hit_sets_skip_and_escalates(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_vector_search_hit_sets_skip_and_escalates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(settings, "vector_search_enabled", True)
 
     def _fake_search(_text: str):
@@ -49,24 +51,39 @@ def test_vector_search_hit_sets_skip_and_escalates(monkeypatch: pytest.MonkeyPat
 def test_vector_search_no_match_does_not_skip(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "vector_search_enabled", True)
     monkeypatch.setattr(vector_search_node, "search_similar_incident", lambda _t: None)
-    d, skip = vector_search_node.run_prompt_vector_search("unique text", _sample_decision())
+    d, skip = vector_search_node.run_prompt_vector_search(
+        "unique text", _sample_decision()
+    )
     assert skip is False
     assert d.action == "ALLOW"
 
 
-def test_maybe_index_skips_non_prompt_incidents(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_maybe_index_skips_non_prompt_incidents(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(settings, "vector_search_enabled", True)
-    with patch.object(vector_store, "upsert_incident_vector", return_value=True) as mock_upsert:
+    with patch.object(
+        vector_store, "upsert_incident_vector", return_value=True
+    ) as mock_upsert:
         vector_store.maybe_index_incident_from_payload(
             "text",
-            {"incidentType": "RESPONSE", "action": "BLOCK", "requestId": "r1", "riskScore": 80},
+            {
+                "incidentType": "RESPONSE",
+                "action": "BLOCK",
+                "requestId": "r1",
+                "riskScore": 80,
+            },
         )
     mock_upsert.assert_not_called()
 
 
-def test_maybe_index_calls_upsert_for_prompt_block(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_maybe_index_calls_upsert_for_prompt_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(settings, "vector_search_enabled", True)
-    with patch.object(vector_store, "upsert_incident_vector", return_value=True) as mock_upsert:
+    with patch.object(
+        vector_store, "upsert_incident_vector", return_value=True
+    ) as mock_upsert:
         vector_store.maybe_index_incident_from_payload(
             "prompt body",
             {

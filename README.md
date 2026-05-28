@@ -1,5 +1,9 @@
 # confidential-Agent
 
+[![Frontend](https://github.com/noukpoherve/confidentialAI/actions/workflows/frontend.yml/badge.svg)](https://github.com/noukpoherve/confidentialAI/actions/workflows/frontend.yml)
+[![Backend](https://github.com/noukpoherve/confidentialAI/actions/workflows/backend.yml/badge.svg)](https://github.com/noukpoherve/confidentialAI/actions/workflows/backend.yml)
+[![CI / Release](https://github.com/noukpoherve/confidentialAI/actions/workflows/ci.yml/badge.svg)](https://github.com/noukpoherve/confidentialAI/actions/workflows/ci.yml)
+
 Monorepo for building a user-side DLP (Data Loss Prevention) guardrail for
 generative AI platforms (ChatGPT, Claude, Gemini, and others).
 
@@ -160,25 +164,28 @@ Open `http://localhost:3000`.
 
 ## 5) CI/CD
 
-Five GitHub Actions workflows live in `.github/workflows/`:
+Three GitHub Actions workflows live in `.github/workflows/`:
 
-| Workflow | Trigger | What it does |
+| Workflow | Triggers on | What it does |
 |---|---|---|
-| `ci-api.yml` | push / PR on `services/security-api/**` | Install uv, run pytest |
-| `ci-dashboard.yml` | push / PR on `apps/admin-dashboard/**` | npm ci, type-check, build |
-| `ci-extension.yml` | push / PR on `apps/browser-extension/**` | npm ci, lint |
-| `deploy-api.yml` | push to `main` | Build Docker image → push to GHCR → redeploy Koyeb service |
-| `deploy-dashboard.yml` | push to `main` | Deploy to Vercel via CLI |
+| `frontend.yml` | push / PR touching `apps/**` | lint · type-check · vitest · build (dashboard + extension) · deploy to Vercel |
+| `backend.yml` | push / PR touching `services/security-api/**` | black · ruff · mypy · bandit · pytest --cov · Docker build → GHCR → Koyeb |
+| `ci.yml` | `v*.*.*` tags / `workflow_dispatch` | extension release builds (chrome + firefox + edge) · GitHub Release |
+
+Each workflow uses **path filters** (only triggers when its own files change) and
+**concurrency** (cancels previous in-progress runs on the same branch).
 
 **Required repository secrets** (Settings → Secrets and variables → Actions):
 
-| Secret | Used by |
+| Secret | Workflow |
 |---|---|
-| `KOYEB_API_KEY` | deploy-api |
-| `KOYEB_SERVICE_ID` | deploy-api |
-| `VERCEL_TOKEN` | deploy-dashboard |
-| `VERCEL_ORG_ID` | deploy-dashboard |
-| `VERCEL_PROJECT_ID` | deploy-dashboard |
+| `KOYEB_API_KEY` | backend.yml |
+| `KOYEB_SERVICE_ID` | backend.yml |
+| `VERCEL_TOKEN` | frontend.yml |
+| `VERCEL_ORG_ID` | frontend.yml |
+| `VERCEL_PROJECT_ID` | frontend.yml |
+
+See [DEVOPS.md](DEVOPS.md) for the full deployment guide, first-time setup checklist, and contribution workflow.
 
 ## 6) Versioning and releases
 
@@ -203,7 +210,7 @@ Release-it writes the changelog to `CHANGELOG.md` and creates an annotated git t
 
 | Area | Status | Notes |
 |------|--------|--------|
-| CI/CD | Done | 5 GitHub Actions workflows; Docker build → GHCR → Koyeb; Vercel deploy |
+| CI/CD | Done | 3 GitHub Actions workflows (frontend / backend / ci-release); path filters; concurrency; black · ruff · mypy · bandit · pytest-cov; Docker → GHCR → Koyeb; Vercel deploy |
 | Versioning / releases | Done | release-it + conventional-changelog; scripts/sync-versions.js |
 | Error tracking (GlitchTip) | Done | Sentry SDK; active only in production when GLITCHTIP_DSN set; DLP filter on events |
 | Chrome extension (MV3) | Done (V1) | Intercept + API call + local redaction; auto-detects prod/dev URL; options for API URL |

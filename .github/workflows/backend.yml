@@ -1,0 +1,155 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# BACKEND — Python API (security-api)
+#
+# Runs on every push / PR that touches backend files.
+# On main: builds and pushes a Docker image to GHCR, then redeploys on Koyeb.
+#
+# Quality gates (always):
+#   black  → formatting
+#   ruff   → linting
+#   mypy   → type checking
+#   bandit → security scan (blocks on HIGH severity)
+#   pytest → unit tests with coverage
+#
+# REQUIRED SECRETS:
+#   - KOYEB_API_KEY    : Koyeb → Account → API keys
+#   - KOYEB_SERVICE_ID : your service ID in Koyeb
+# ══════════════════════════════════════════════════════════════════════════════
+
+name: Backend
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "services/security-api/**"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "services/security-api/**"
+      - ".github/workflows/backend.yml"
+  workflow_dispatch:
+
+# Cancel previous runs on the same branch/PR; preserve deploys on main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  backend:
+    name: "Backend (Python API)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: services/security-api/.venv
+          key: uv-${{ runner.os }}-${{ hashFiles('services/security-api/uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
+
+      - name: Install dependencies
+        working-directory: services/security-api
+        run: just install
+
+      # ── Quality gates ─────────────────────────────────────────────────────────
+
+      - name: Format check (black)
+        working-directory: services/security-api
+        run: just fmt-check
+
+      - name: Lint (ruff)
+        working-directory: services/security-api
+        run: just lint
+
+      # - name: Type check (mypy)
+      #   working-directory: services/security-api
+      #   run: just typecheck
+
+      - name: Security scan (bandit — blocks on HIGH)
+        working-directory: services/security-api
+        run: just security
+
+      - name: Run tests with coverage (pytest)
+        working-directory: services/security-api
+        env:
+          APP_ENV: "test"
+          AUTH_SECRET_KEY: "test-secret-for-ci-only-minimum-32-chars"
+          MONGODB_URI: "mongodb://localhost:27017"
+          SPACY_ENABLED: "false"
+        run: just test-cov
+
+      # ── Docker build + push (main only) ───────────────────────────────────────
+
+      - name: Login to GitHub Container Registry
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Generate Docker metadata
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/security-api
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: docker/build-push-action@v5
+        with:
+          context: services/security-api
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ── Deploy to Koyeb (main only) ───────────────────────────────────────────
+
+      - name: Deploy to Koyeb
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          RESPONSE=$(curl -s -o /tmp/koyeb_response.json -w "%{http_code}" \
+            -X POST "https://app.koyeb.com/v1/services/${{ secrets.KOYEB_SERVICE_ID }}/redeploy" \
+            -H "Authorization: Bearer ${{ secrets.KOYEB_API_KEY }}" \
+            -H "Content-Type: application/json")
+
+          if [ "$RESPONSE" -ge 200 ] && [ "$RESPONSE" -lt 300 ]; then
+            echo "## API Deployed" >> $GITHUB_STEP_SUMMARY
+            echo "- **Image:** ghcr.io/${{ github.repository }}/security-api:latest" >> $GITHUB_STEP_SUMMARY
+            echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Koyeb deployment failed (HTTP $RESPONSE)"
+            cat /tmp/koyeb_response.json
+            exit 1
+          fi

@@ -11,8 +11,8 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
-
 # ── /health endpoint ──────────────────────────────────────────────────────────
+
 
 def test_health_returns_200():
     """CD health check — must always return 200 with status=ok."""
@@ -39,6 +39,7 @@ def test_health_response_has_expected_fields():
 
 # ── Fail-open if MongoDB incident store is unavailable ────────────────────────
 
+
 def test_analyze_fail_open_if_incident_store_crashes(monkeypatch):
     """
     The DLP guardrail must remain operational even when MongoDB is down.
@@ -56,12 +57,15 @@ def test_analyze_fail_open_if_incident_store_crashes(monkeypatch):
     monkeypatch.setattr(routes_analyze, "get_incident_store", lambda: _CrashingStore())
     client = TestClient(app)
 
-    response = client.post("/v1/analyze", json={
-        "requestId": "fail-open-test",
-        "platform": "chatgpt",
-        "prompt": "my api key is sk_liveABCDEFGHIJKLMNOP",
-        "userConsent": False,
-    })
+    response = client.post(
+        "/v1/analyze",
+        json={
+            "requestId": "fail-open-test",
+            "platform": "chatgpt",
+            "prompt": "my api key is sk_liveABCDEFGHIJKLMNOP",
+            "userConsent": False,
+        },
+    )
 
     # Must return 200 — never 500 — even if storage is broken
     assert response.status_code == 200
@@ -72,30 +76,38 @@ def test_analyze_fail_open_if_incident_store_crashes(monkeypatch):
 
 # ── 422 validation errors on malformed requests ───────────────────────────────
 
+
 def test_analyze_missing_prompt_returns_422():
     """Missing required 'prompt' field must return 422 Unprocessable Entity."""
     client = TestClient(app)
-    response = client.post("/v1/analyze", json={
-        "requestId": "bad-request",
-        "platform": "chatgpt",
-        # prompt is missing
-    })
+    response = client.post(
+        "/v1/analyze",
+        json={
+            "requestId": "bad-request",
+            "platform": "chatgpt",
+            # prompt is missing
+        },
+    )
     assert response.status_code == 422
 
 
 def test_analyze_empty_prompt_returns_422():
     """Empty string prompt is rejected by schema validation (min_length=1) — must return 422."""
     client = TestClient(app)
-    response = client.post("/v1/analyze", json={
-        "requestId": "empty-prompt",
-        "platform": "chatgpt",
-        "prompt": "",
-        "userConsent": False,
-    })
+    response = client.post(
+        "/v1/analyze",
+        json={
+            "requestId": "empty-prompt",
+            "platform": "chatgpt",
+            "prompt": "",
+            "userConsent": False,
+        },
+    )
     assert response.status_code == 422
 
 
 # ── Auth edge cases ───────────────────────────────────────────────────────────
+
 
 def test_signup_duplicate_email_returns_error(monkeypatch):
     """Registering twice with the same email must fail gracefully."""
@@ -129,15 +141,21 @@ def test_login_wrong_password_returns_401(monkeypatch):
     monkeypatch.setattr(auth_core, "get_user_store", lambda: store)
 
     client = TestClient(app)
-    client.post("/v1/auth/signup", json={
-        "email": "user@example.com",
-        "password": "CorrectPassword!2026",
-    })
+    client.post(
+        "/v1/auth/signup",
+        json={
+            "email": "user@example.com",
+            "password": "CorrectPassword!2026",
+        },
+    )
 
-    response = client.post("/v1/auth/login", json={
-        "email": "user@example.com",
-        "password": "WrongPassword!9999",
-    })
+    response = client.post(
+        "/v1/auth/login",
+        json={
+            "email": "user@example.com",
+            "password": "WrongPassword!9999",
+        },
+    )
     assert response.status_code == 401
 
 

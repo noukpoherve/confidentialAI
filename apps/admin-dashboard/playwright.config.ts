@@ -15,9 +15,11 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: "npm run dev",
+    // In CI the app is already built — use `start` (production server, instant).
+    // Locally, `dev` is preferred so hot-reload works without a prior build.
+    command: process.env.CI ? "npm run start" : "npm run dev",
     port: 3000,
-    reuseExistingServer: true,
+    reuseExistingServer: !process.env.CI,
     timeout: 120000,
   },
   projects: [

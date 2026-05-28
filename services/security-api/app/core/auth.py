@@ -37,33 +37,49 @@ def create_access_token(user_id: str, email: str) -> str:
         "sub": user_id,
         "email": email,
         "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(minutes=settings.auth_access_token_minutes)).timestamp()),
+        "exp": int(
+            (now + timedelta(minutes=settings.auth_access_token_minutes)).timestamp()
+        ),
     }
-    return jwt.encode(payload, settings.auth_secret_key, algorithm=settings.auth_algorithm)
+    return jwt.encode(
+        payload, settings.auth_secret_key, algorithm=settings.auth_algorithm
+    )
 
 
 def decode_access_token(token: str) -> dict:
-    return jwt.decode(token, settings.auth_secret_key, algorithms=[settings.auth_algorithm])
+    return jwt.decode(
+        token, settings.auth_secret_key, algorithms=[settings.auth_algorithm]
+    )
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)) -> dict:
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> dict:
     if not credentials or credentials.scheme.lower() != "bearer":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token"
+        )
     token = credentials.credentials
     try:
         payload = decode_access_token(token)
         user_id = payload.get("sub")
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        ) from exc
 
     if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload"
+        )
     user = get_user_store().get_user_by_id(user_id)
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
+        )
     return user
 
 

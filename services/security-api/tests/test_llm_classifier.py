@@ -28,7 +28,9 @@ def test_llm_classifier_escalates_allow_to_warn(monkeypatch) -> None:
         },
     )
 
-    decision = run_llm_classifier("The passphrase might be hidden here.", _base_decision())
+    decision = run_llm_classifier(
+        "The passphrase might be hidden here.", _base_decision()
+    )
     assert decision.action == "WARN"
     assert decision.risk_score >= 40
     assert any(d["type"] == "LLM_SENSITIVE" for d in decision.detections)

@@ -4,7 +4,9 @@ from app.agents.afe import run_afe
 from app.agents.orchestrator import analyze_prompt_with_agents
 
 
-def test_workflow_toxic_plus_sensitive_still_returns_rephrase_suggestions(monkeypatch) -> None:
+def test_workflow_toxic_plus_sensitive_still_returns_rephrase_suggestions(
+    monkeypatch,
+) -> None:
     """
     Workflow contract:
     - Text contains toxicity + sensitive data (email/phone).
@@ -26,7 +28,9 @@ def test_workflow_toxic_plus_sensitive_still_returns_rephrase_suggestions(monkey
     assert any(d["type"] == "TOXIC_LANGUAGE" for d in decision.detections)
 
 
-def test_workflow_person_false_positive_filtered_for_lowercase_insult(monkeypatch) -> None:
+def test_workflow_person_false_positive_filtered_for_lowercase_insult(
+    monkeypatch,
+) -> None:
     """
     Workflow contract:
     - Lowercase profanity phrase like 'fuck you' must not become PERSONNE.
@@ -34,7 +38,9 @@ def test_workflow_person_false_positive_filtered_for_lowercase_insult(monkeypatc
     from app.agents import afe
 
     class FakeEnt:
-        def __init__(self, text: str, label_: str, start: int, start_char: int, end_char: int) -> None:
+        def __init__(
+            self, text: str, label_: str, start: int, start_char: int, end_char: int
+        ) -> None:
             self.text = text
             self.label_ = label_
             self.start = start
@@ -48,7 +54,9 @@ def test_workflow_person_false_positive_filtered_for_lowercase_insult(monkeypatc
     class FakeNlp:
         def __call__(self, _prompt: str):
             # Force a PER entity exactly where the false positive usually appears.
-            return FakeDoc([FakeEnt("fuck you", "PERSON", start=0, start_char=0, end_char=8)])
+            return FakeDoc(
+                [FakeEnt("fuck you", "PERSON", start=0, start_char=0, end_char=8)]
+            )
 
     monkeypatch.setattr(afe, "_detect_language_code", lambda _text: "en")
     monkeypatch.setattr(afe, "_nlp_for_ner", lambda _lang: FakeNlp())
@@ -67,7 +75,9 @@ def test_workflow_person_name_still_detected_when_capitalized(monkeypatch) -> No
     from app.agents import afe
 
     class FakeEnt:
-        def __init__(self, text: str, label_: str, start: int, start_char: int, end_char: int) -> None:
+        def __init__(
+            self, text: str, label_: str, start: int, start_char: int, end_char: int
+        ) -> None:
             self.text = text
             self.label_ = label_
             self.start = start

@@ -18,11 +18,15 @@ class StubSignalStore:
         grouped = {}
         for item in self.items:
             host = item.get("hostname", "unknown")
-            grouped.setdefault(host, {"hostname": host, "count": 0, "events": {}, "lastSeenAt": ""})
+            grouped.setdefault(
+                host, {"hostname": host, "count": 0, "events": {}, "lastSeenAt": ""}
+            )
             grouped[host]["count"] += 1
             event = item.get("eventType", "UNKNOWN")
             grouped[host]["events"][event] = grouped[host]["events"].get(event, 0) + 1
-            grouped[host]["lastSeenAt"] = max(grouped[host]["lastSeenAt"], item.get("createdAt", ""))
+            grouped[host]["lastSeenAt"] = max(
+                grouped[host]["lastSeenAt"], item.get("createdAt", "")
+            )
         rows = sorted(grouped.values(), key=lambda x: x["count"], reverse=True)
         return rows[: max(limit, 0)]
 

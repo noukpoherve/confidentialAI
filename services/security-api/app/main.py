@@ -4,7 +4,7 @@ import logging.handlers
 from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -18,11 +18,12 @@ from app.core.rate_limiter import limiter
 
 # ── Environment flags ─────────────────────────────────────────────────────────
 _IS_LOCAL = settings.app_env in {"dev", "development", "local"}
-_IS_PROD  = settings.app_env == "production"
+_IS_PROD = settings.app_env == "production"
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 # Local : readable console (dev formatter) + rotating file logs/dev.log
 # Prod  : JSON console only (GlitchTip captures errors via SDK)
+
 
 def _build_logging_config() -> dict:
     handlers: dict = {
@@ -61,11 +62,12 @@ def _build_logging_config() -> dict:
         "handlers": handlers,
         "root": {"level": "INFO", "handlers": root_handlers},
         "loggers": {
-            "httpx":          {"level": "WARNING"},
-            "pymongo":        {"level": "WARNING"},
+            "httpx": {"level": "WARNING"},
+            "pymongo": {"level": "WARNING"},
             "uvicorn.access": {"level": "WARNING"},
         },
     }
+
 
 logging.config.dictConfig(_build_logging_config())
 logger = logging.getLogger(__name__)
@@ -74,13 +76,16 @@ logger = logging.getLogger(__name__)
 # Active ONLY in production. Never in local to avoid noise.
 if _IS_PROD and settings.glitchtip_dsn:
     from app.core.error_tracking import init_sentry
+
     init_sentry(
         dsn=settings.glitchtip_dsn,
         environment=settings.app_env,
         release=settings.app_version,
     )
 elif _IS_LOCAL:
-    logger.info('"Error tracking DISABLED in local mode — errors logged to logs/dev.log"')
+    logger.info(
+        '"Error tracking DISABLED in local mode — errors logged to logs/dev.log"'
+    )
 else:
     logger.warning('"GLITCHTIP_DSN not set — error tracking disabled"')
 
@@ -126,7 +131,9 @@ def _startup_checks() -> None:
 
     if settings.app_env not in {"dev", "development", "local"}:
         if not settings.llm_classifier_api_key:
-            logger.warning('"LLM_CLASSIFIER_API_KEY not set — LLM classifier and image moderation disabled."')
+            logger.warning(
+                '"LLM_CLASSIFIER_API_KEY not set — LLM classifier and image moderation disabled."'
+            )
 
     logger.info(
         '"API started env=%s llm_enabled=%s vector_search=%s spacy=%s"',

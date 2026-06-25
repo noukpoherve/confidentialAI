@@ -17,6 +17,15 @@ if (!version) {
 
 const root = path.resolve(__dirname, "..");
 
+function readFile(relPath) {
+  const fullPath = path.join(root, relPath);
+  if (!fs.existsSync(fullPath)) {
+    console.error(`Error: expected file not found: ${relPath}`);
+    process.exit(1);
+  }
+  return { fullPath, content: fs.readFileSync(fullPath, "utf8") };
+}
+
 // ── Node packages ──────────────────────────────────────────────────────────
 const packageFiles = [
   "apps/admin-dashboard/package.json",
@@ -25,26 +34,27 @@ const packageFiles = [
 ];
 
 for (const file of packageFiles) {
-  const fullPath = path.join(root, file);
-  const pkg = JSON.parse(fs.readFileSync(fullPath, "utf8"));
+  const { fullPath, content } = readFile(file);
+  const pkg = JSON.parse(content);
   pkg.version = version;
   fs.writeFileSync(fullPath, JSON.stringify(pkg, null, 2) + "\n");
   console.log(`  bumped ${file}  →  ${version}`);
 }
 
 // ── Python package (pyproject.toml) ───────────────────────────────────────
-const pyprojectPath = path.join(root, "services/security-api/pyproject.toml");
-let pyproject = fs.readFileSync(pyprojectPath, "utf8");
-pyproject = pyproject.replace(/^version = ".*"$/m, `version = "${version}"`);
+const pyprojectRel = "services/security-api/pyproject.toml";
+const { fullPath: pyprojectPath, content: pyprojectRaw } = readFile(pyprojectRel);
+const pyproject = pyprojectRaw.replace(/^version = ".*"$/m, `version = "${version}"`);
 fs.writeFileSync(pyprojectPath, pyproject);
-console.log(`  bumped services/security-api/pyproject.toml  →  ${version}`);
+console.log(`  bumped ${pyprojectRel}  →  ${version}`);
 
 // ── Browser extension manifest (manifest_version 3) ───────────────────────
 // Chrome/Firefox require a plain X.Y.Z integer-only version string.
-const manifestPath = path.join(root, "apps/browser-extension/manifest.json");
-const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+const manifestRel = "apps/browser-extension/manifest.json";
+const { fullPath: manifestPath, content: manifestRaw } = readFile(manifestRel);
+const manifest = JSON.parse(manifestRaw);
 manifest.version = version;
 fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
-console.log(`  bumped apps/browser-extension/manifest.json  →  ${version}`);
+console.log(`  bumped ${manifestRel}  →  ${version}`);
 
 console.log(`\nAll packages synced to v${version}`);

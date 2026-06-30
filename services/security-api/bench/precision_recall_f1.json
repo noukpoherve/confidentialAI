@@ -1,0 +1,44 @@
+{
+  "tp": 14,
+  "fn": 6,
+  "fp": 15,
+  "tn": 65,
+  "precision": 0.4828,
+  "recall": 0.7,
+  "f1": 0.5714,
+  "fpr_pct": 18.75,
+  "fn_examples": [
+    [
+      "PHONE",
+      "Mon numero direct est le 06 12 34 56 78, rappelle-moi vite.",
+      [
+        "PHONE"
+      ]
+    ],
+    [
+      "API_KEY",
+      "Utilise cette cle en prod : api_key_4f8a9b2c1d3e5f6a7b8c9d0e1f2a3b4c",
+      []
+    ],
+    [
+      "PERSONNE_BADGE",
+      "Jean Dupont, badge 4521, 3e etage, doit recevoir ce document confidentiel.",
+      []
+    ],
+    [
+      "PASSWORD_EN",
+      "The password is: SuperSecret2026XYZ for the admin panel.",
+      []
+    ],
+    [
+      "API_KEY_2",
+      "rk_test_AbCdEfGhIjKlMnOpQrStUvWxYz123456",
+      []
+    ],
+    [
+      "PHONE_INTL",
+      "Appelle-moi au +33 6 12 34 56 78 demain matin.",
+      []
+    ]
+  ]
+}

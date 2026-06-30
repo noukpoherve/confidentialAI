@@ -1,0 +1,172 @@
+{
+  "total_messages": 80,
+  "total_false_positives": 15,
+  "fpr_global_pct": 18.75,
+  "by_category": {
+    "A_requetes_pro_generiques": {
+      "total": 20,
+      "false_positives": 0,
+      "fpr_pct": 0.0
+    },
+    "B_pii_fictives_narratives": {
+      "total": 20,
+      "false_positives": 1,
+      "fpr_pct": 5.0
+    },
+    "C_code_non_proprietaire": {
+      "total": 20,
+      "false_positives": 14,
+      "fpr_pct": 70.0
+    },
+    "D_communication_pro_sensible_apparence": {
+      "total": 20,
+      "false_positives": 0,
+      "fpr_pct": 0.0
+    }
+  },
+  "fp_by_detector": {
+    "EMAIL": 1,
+    "SOURCE_CODE": 18
+  },
+  "fp_examples": [
+    {
+      "category": "B_pii_fictives_narratives",
+      "message_preview": "Dans le scenario du jeu, le joueur recoit l'email faux@exemple-fictif.test.",
+      "action": "ANONYMIZE",
+      "risk_score": 15,
+      "detections": [
+        "EMAIL"
+      ]
+    },
+    {
+      "category": "C_code_non_proprietaire",
+      "message_preview": "def fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fi",
+      "action": "ANONYMIZE",
+      "risk_score": 20,
+      "detections": [
+        "SOURCE_CODE"
+      ]
+    },
+    {
+      "category": "C_code_non_proprietaire",
+      "message_preview": "import math\nprint(math.sqrt(16))",
+      "action": "ANONYMIZE",
+      "risk_score": 20,
+      "detections": [
+        "SOURCE_CODE"
+      ]
+    },
+    {
+      "category": "C_code_non_proprietaire",
+      "message_preview": "class Animal:\n    def __init__(self, name):\n        self.name = name",
+      "action": "WARN",
+      "risk_score": 40,
+      "detections": [
+        "SOURCE_CODE",
+        "SOURCE_CODE"
+      ]
+    },
+    {
+      "category": "C_code_non_proprietaire",
+      "message_preview": "function greet(name) {\n  return `Hello, ${name}!`;\n}",
+      "action": "ANONYMIZE",
+      "risk_score": 20,
+      "detections": [
+        "SOURCE_CODE"
+      ]
+    },
+    {
+      "category": "C_code_non_proprietaire",
+      "message_preview": "from collections import Counter\nprint(Counter('abracadabra'))",
+      "action": "ANONYMIZE",
+      "risk_score": 20,
+      "detections": [
+        "SOURCE_CODE"
+      ]
+    },
+    {
+      "category": "C_code_non_proprietaire",
+      "message_preview": "import requests\nresponse = requests.get('https://api.publicapis.org/entries')",
+      "action": "ANONYMIZE",
+      "risk_score": 20,
+      "detections": [
+        "SOURCE_CODE"
+      ]
+    },
+    {
+      "category": "C_code_non_proprietaire",
+      "message_preview": "class BinaryTree:\n    def __init__(self):\n        self.root = None",
+      "action": "WARN",
+      "risk_score": 40,
+      "detections": [
+        "SOURCE_CODE",
+        "SOURCE_CODE"
+      ]
+    },
+    {
+      "category": "C_code_non_proprietaire",
+      "message_preview": "def quicksort(arr):\n    if len(arr) <= 1:\n        return arr\n    return arr",
+      "action": "ANONYMIZE",
+      "risk_score": 20,
+      "detections": [
+        "SOURCE_CODE"
+      ]
+    },
+    {
+      "category": "C_code_non_proprietaire",
+      "message_preview": "import numpy as np\narr = np.array([1, 2, 3])\nprint(arr.mean())",
+      "action": "ANONYMIZE",
+      "risk_score": 20,
+      "detections": [
+        "SOURCE_CODE"
+      ]
+    },
+    {
+      "category": "C_code_non_proprietaire",
+      "message_preview": "def is_palindrome(s):\n    return s == s[::-1]",
+      "action": "ANONYMIZE",
+      "risk_score": 20,
+      "detections": [
+        "SOURCE_CODE"
+      ]
+    },
+    {
+      "category": "C_code_non_proprietaire",
+      "message_preview": "from flask import Flask\napp = Flask(__name__)\n@app.route('/')\ndef home(): return",
+      "action": "WARN",
+      "risk_score": 40,
+      "detections": [
+        "SOURCE_CODE",
+        "SOURCE_CODE"
+      ]
+    },
+    {
+      "category": "C_code_non_proprietaire",
+      "message_preview": "class Stack:\n    def __init__(self):\n        self.items = []",
+      "action": "WARN",
+      "risk_score": 40,
+      "detections": [
+        "SOURCE_CODE",
+        "SOURCE_CODE"
+      ]
+    },
+    {
+      "category": "C_code_non_proprietaire",
+      "message_preview": "import pandas as pd\ndf = pd.DataFrame({'a': [1, 2, 3]})\nprint(df.describe())",
+      "action": "ANONYMIZE",
+      "risk_score": 20,
+      "detections": [
+        "SOURCE_CODE"
+      ]
+    },
+    {
+      "category": "C_code_non_proprietaire",
+      "message_preview": "def factorial(n):\n    return 1 if n == 0 else n * factorial(n-1)",
+      "action": "ANONYMIZE",
+      "risk_score": 20,
+      "detections": [
+        "SOURCE_CODE"
+      ]
+    }
+  ]
+}

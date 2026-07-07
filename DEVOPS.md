@@ -80,7 +80,7 @@ Push / PR (backend files changed)
          black --check     (formatting)
          ruff check        (linting)
          mypy              (type checking)
-         bandit -ll        (security scan — blocks on HIGH severity)
+         bandit -ll        (de — blocks on HIGH severity)
          pytest --cov      (tests + coverage report)
               │
     if main ──┤

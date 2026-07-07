@@ -36,3 +36,6 @@ logs/
 .env.*.local
 services/security-api/.env
 .vercel
+
+# AI extension local config
+.kilo/

@@ -65,11 +65,15 @@ async function executeScenario(scenario: TestScenario): Promise<ScenarioExecutio
     let stderr = "";
     let timedOut = false;
 
+    const MAX_BYTES = 80_000; // 80 KB per stream — keeps JSON responses small
     child.stdout.on("data", (chunk) => {
-      stdout += String(chunk);
+      if (stdout.length < MAX_BYTES) stdout += String(chunk);
     });
     child.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
+      // Drop repeated one-liner warnings (e.g. spaCy model missing) — keep first occurrence only.
+      const line = String(chunk);
+      const isRepeat = stderr.includes(line.trim().slice(0, 60));
+      if (!isRepeat && stderr.length < MAX_BYTES) stderr += line;
     });
 
     const timeout = setTimeout(() => {

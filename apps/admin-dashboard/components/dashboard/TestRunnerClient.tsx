@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type StatusTone = "idle" | "running" | "pass" | "fail";
+type TestLayer = "backend" | "frontend" | "e2e" | "benchmark";
 
 interface ScenarioLatest {
   status: Exclude<StatusTone, "idle">;
@@ -16,7 +17,7 @@ interface ScenarioRow {
   id: string;
   title: string;
   description: string;
-  layer: "backend" | "frontend" | "e2e";
+  layer: TestLayer;
   tags: string[];
   latest: ScenarioLatest | null;
 }
@@ -42,6 +43,13 @@ interface RunnerPayload {
   activeRun: RunState | null;
 }
 
+function layerBadgeClass(layer: TestLayer): string {
+  if (layer === "benchmark") return "border-violet-200 bg-violet-50 text-violet-800";
+  if (layer === "backend")   return "border-sky-200 bg-sky-50 text-sky-800";
+  if (layer === "frontend")  return "border-orange-200 bg-orange-50 text-orange-800";
+  return "border-line bg-surface text-ink-muted"; // e2e
+}
+
 function toneClass(status: StatusTone): string {
   if (status === "pass") return "border-emerald-200 bg-emerald-50 text-emerald-800";
   if (status === "fail") return "border-rose-200 bg-rose-50 text-rose-800";
@@ -60,13 +68,26 @@ export function TestRunnerClient() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [selectedScenario, setSelectedScenario] = useState<string | null>(null);
 
-  const loadState = useCallback(async () => {
+  // Track whether a run was in progress so polling continues through transient errors.
+  const runWasActive = useRef(false);
+
+  const loadState = useCallback(async (silent = false) => {
     const res = await fetch("/api/test-runner/scenarios", { cache: "no-store" });
     if (!res.ok) {
-      throw new Error(`Failed to load test runner state (${res.status})`);
+      if (!silent) throw new Error(`Failed to load test runner state (${res.status})`);
+      return;
     }
-    const data = (await res.json()) as RunnerPayload;
+    let data: RunnerPayload;
+    try {
+      data = (await res.json()) as RunnerPayload;
+    } catch {
+      // Transient JSON parse error (oversized payload mid-stream) — keep last state.
+      if (!silent) throw new Error("Failed to parse test runner response.");
+      return;
+    }
     setPayload(data);
+    if (data.activeRun?.status === "running") runWasActive.current = true;
+    else if (data.activeRun === null) runWasActive.current = false;
   }, []);
 
   const runScenarios = useCallback(async (scenarioIds?: string[]) => {
@@ -80,6 +101,7 @@ export function TestRunnerClient() {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || "Failed to start run.");
     }
+    runWasActive.current = true;
     await loadState();
   }, [loadState]);
 
@@ -97,18 +119,17 @@ export function TestRunnerClient() {
       }
     })();
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [loadState]);
 
+  // Poll while a run is active. Keep polling through transient 500/parse errors
+  // so the UI stays live even when the JSON payload is temporarily oversized.
   useEffect(() => {
-    if (!payload.activeRun || payload.activeRun.status !== "running") return;
+    const shouldPoll = payload.activeRun?.status === "running" || runWasActive.current;
+    if (!shouldPoll) return;
     const id = setInterval(() => {
-      loadState().catch(() => {
-        // Keep last known state; transient failures shouldn't erase UI.
-      });
-    }, 1300);
+      loadState(true).catch(() => {});
+    }, 2000);
     return () => clearInterval(id);
   }, [payload.activeRun, loadState]);
 
@@ -224,7 +245,7 @@ export function TestRunnerClient() {
                     </label>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="rounded-full border border-line bg-surface px-2 py-1 text-xs font-semibold uppercase">
+                    <span className={`rounded-full border px-2 py-1 text-xs font-semibold uppercase ${layerBadgeClass(scenario.layer)}`}>
                       {scenario.layer}
                     </span>
                   </td>

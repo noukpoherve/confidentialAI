@@ -1,6 +1,6 @@
 from typing import Literal
-from pydantic import BaseModel, Field
 
+from pydantic import BaseModel, Field
 
 SecurityAction = Literal["ALLOW", "ANONYMIZE", "BLOCK", "WARN", "SUGGEST_REPHRASE"]
 # Open string — platform list grows as new sites are added to the extension.
@@ -67,6 +67,7 @@ class ValidateResponseResponse(BaseModel):
 
 
 # ── Image moderation ──────────────────────────────────────────────────────────
+
 
 class AnalyzeImageRequest(BaseModel):
     requestId: str = Field(..., min_length=4, max_length=128)

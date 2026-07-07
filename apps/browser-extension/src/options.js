@@ -56,11 +56,23 @@ function defaultApiBaseUrlForBuild() {
 
 function applyApiPresetButtonsVisibility() {
   const localBtn = $("useLocalApiBtn");
-  if (!localBtn) return;
-  if (resolvedApiPresetProfile === "production") {
-    localBtn.classList.add("hidden");
-  } else {
-    localBtn.classList.remove("hidden");
+  if (localBtn) {
+    if (resolvedApiPresetProfile === "production") {
+      localBtn.classList.add("hidden");
+    } else {
+      localBtn.classList.remove("hidden");
+    }
+  }
+
+  // In production: hide the entire Backend URL section.
+  // Users have no reason to see or modify this URL in prod.
+  const backendSection = $("backendUrlSection");
+  if (backendSection) {
+    if (resolvedApiPresetProfile === "production") {
+      backendSection.classList.add("hidden");
+    } else {
+      backendSection.classList.remove("hidden");
+    }
   }
 }
 

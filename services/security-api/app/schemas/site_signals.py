@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -17,7 +17,7 @@ class SiteSignalRequest(BaseModel):
     pageUrl: str | None = None
     platformId: str | None = None
     details: str | None = None
-    createdAt: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    createdAt: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 class SiteSignalResponse(BaseModel):

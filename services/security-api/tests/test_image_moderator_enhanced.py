@@ -12,13 +12,11 @@ Covers:
 
 from unittest.mock import patch
 
-import pytest
-
 from app.agents.image_moderator import run_image_moderator
 from app.core import config
 
-
 # ── Mock API responses ────────────────────────────────────────────────────────
+
 
 def _make_api_result(
     flagged: bool = False,
@@ -36,7 +34,7 @@ _LINGERIE_RESULT = _make_api_result(
     flagged=False,
     categories={"sexual": False},
     scores={
-        "sexual": 0.09,          # Below API threshold but above safe-mode threshold (0.06)
+        "sexual": 0.09,  # Below API threshold but above safe-mode threshold (0.06)
         "violence": 0.001,
         "illicit": 0.002,
     },
@@ -67,6 +65,7 @@ _CLEAN_RESULT = _make_api_result(
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
+
 def test_safe_mode_catches_lingerie(monkeypatch):
     """Safe mode should WARN for images with a low-but-non-trivial sexual score."""
     monkeypatch.setattr(config.settings, "llm_classifier_enabled", True)
@@ -74,7 +73,9 @@ def test_safe_mode_catches_lingerie(monkeypatch):
     monkeypatch.setattr(config.settings, "safe_mode_sexual_threshold", 0.06)
     monkeypatch.setattr(config.settings, "llm_classifier_api_key", "test-key")
 
-    with patch("app.agents.image_moderator._call_moderation_api", return_value=_LINGERIE_RESULT):
+    with patch(
+        "app.agents.image_moderator._call_moderation_api", return_value=_LINGERIE_RESULT
+    ):
         decision = run_image_moderator("base64data", "image/jpeg")
 
     assert decision.action == "WARN"
@@ -88,7 +89,9 @@ def test_safe_mode_off_ignores_low_score(monkeypatch):
     monkeypatch.setattr(config.settings, "safe_mode_enabled", False)
     monkeypatch.setattr(config.settings, "llm_classifier_api_key", "test-key")
 
-    with patch("app.agents.image_moderator._call_moderation_api", return_value=_LINGERIE_RESULT):
+    with patch(
+        "app.agents.image_moderator._call_moderation_api", return_value=_LINGERIE_RESULT
+    ):
         decision = run_image_moderator("base64data", "image/jpeg")
 
     assert decision.action == "ALLOW"
@@ -101,7 +104,9 @@ def test_drugs_image_blocked(monkeypatch):
     monkeypatch.setattr(config.settings, "llm_classifier_enabled", True)
     monkeypatch.setattr(config.settings, "llm_classifier_api_key", "test-key")
 
-    with patch("app.agents.image_moderator._call_moderation_api", return_value=_DRUGS_RESULT):
+    with patch(
+        "app.agents.image_moderator._call_moderation_api", return_value=_DRUGS_RESULT
+    ):
         decision = run_image_moderator("base64data", "image/jpeg")
 
     assert decision.action == "BLOCK"
@@ -114,7 +119,9 @@ def test_csam_always_blocked(monkeypatch):
     monkeypatch.setattr(config.settings, "llm_classifier_enabled", True)
     monkeypatch.setattr(config.settings, "llm_classifier_api_key", "test-key")
 
-    with patch("app.agents.image_moderator._call_moderation_api", return_value=_CSAM_RESULT):
+    with patch(
+        "app.agents.image_moderator._call_moderation_api", return_value=_CSAM_RESULT
+    ):
         decision = run_image_moderator("base64data", "image/jpeg")
 
     assert decision.action == "BLOCK"
@@ -128,7 +135,9 @@ def test_clean_image_allowed(monkeypatch):
     monkeypatch.setattr(config.settings, "safe_mode_sexual_threshold", 0.06)
     monkeypatch.setattr(config.settings, "llm_classifier_api_key", "test-key")
 
-    with patch("app.agents.image_moderator._call_moderation_api", return_value=_CLEAN_RESULT):
+    with patch(
+        "app.agents.image_moderator._call_moderation_api", return_value=_CLEAN_RESULT
+    ):
         decision = run_image_moderator("base64data", "image/jpeg")
 
     assert decision.action == "ALLOW"
@@ -151,6 +160,8 @@ def test_partial_nudity_confidence_matches_sexual_score(monkeypatch):
     with patch("app.agents.image_moderator._call_moderation_api", return_value=result):
         decision = run_image_moderator("base64data", "image/jpeg")
 
-    pn_detections = [d for d in decision.detections if d["type"] == "IMAGE_PARTIAL_NUDITY"]
+    pn_detections = [
+        d for d in decision.detections if d["type"] == "IMAGE_PARTIAL_NUDITY"
+    ]
     assert len(pn_detections) == 1
     assert abs(pn_detections[0]["confidence"] - round(sexual_score, 3)) < 0.001

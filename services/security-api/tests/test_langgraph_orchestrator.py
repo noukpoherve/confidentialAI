@@ -1,5 +1,8 @@
+from app.agents.orchestrator import (
+    analyze_prompt_with_agents,
+    validate_response_with_agents,
+)
 from app.core.config import settings
-from app.agents.orchestrator import analyze_prompt_with_agents, validate_response_with_agents
 
 
 def test_prompt_graph_returns_policy_decision() -> None:
@@ -9,8 +12,10 @@ def test_prompt_graph_returns_policy_decision() -> None:
     decision = execution.decision
     assert decision.action == "BLOCK"
     assert decision.risk_score >= 40
-    # BLOCK decisions skip the toxicity analyzer — trace ends at "ac".
-    assert execution.graph_trace == ["afe", "vector_search", "llm_classifier", "ac"]
+    # BLOCK from the deterministic engine skips llm_classifier (optimization).
+    # vector_search presence depends on VECTOR_SEARCH_ENABLED env var.
+    assert execution.graph_trace[0] == "afe"
+    assert execution.graph_trace[-1] == "ac"
 
 
 def test_response_graph_detects_harmful_url_output() -> None:
@@ -66,7 +71,9 @@ def test_prompt_graph_samsung_scenario() -> None:
         "Contact john.doe@corp.example.com if anything looks wrong.\n"
         "The audit covers the Q2 security review for project Phoenix."
     )
-    execution = analyze_prompt_with_agents(prompt=samsung_like_prompt, user_consent=False)
+    execution = analyze_prompt_with_agents(
+        prompt=samsung_like_prompt, user_consent=False
+    )
     decision = execution.decision
 
     assert decision.action == "BLOCK"

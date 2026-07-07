@@ -1,8 +1,10 @@
 import logging
 import logging.config
+import logging.handlers
+from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -14,9 +16,37 @@ from app.api.routes_user_settings import router as user_settings_router
 from app.core.config import settings
 from app.core.rate_limiter import limiter
 
-# ── Structured logging ────────────────────────────────────────────────────────
-logging.config.dictConfig(
-    {
+# ── Environment flags ─────────────────────────────────────────────────────────
+_IS_LOCAL = settings.app_env in {"dev", "development", "local"}
+_IS_PROD = settings.app_env == "production"
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+# Local : readable console (dev formatter) + rotating file logs/dev.log
+# Prod  : JSON console only (GlitchTip captures errors via SDK)
+
+
+def _build_logging_config() -> dict:
+    handlers: dict = {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "dev" if _IS_LOCAL else "json",
+        }
+    }
+    root_handlers = ["console"]
+
+    if _IS_LOCAL:
+        Path("logs").mkdir(exist_ok=True)
+        handlers["file"] = {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": "logs/dev.log",
+            "maxBytes": 5 * 1024 * 1024,
+            "backupCount": 3,
+            "formatter": "json",
+            "encoding": "utf-8",
+        }
+        root_handlers.append("file")
+
+    return {
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {
@@ -29,23 +59,35 @@ logging.config.dictConfig(
                 "datefmt": "%H:%M:%S",
             },
         },
-        "handlers": {
-            "console": {
-                "class": "logging.StreamHandler",
-                "formatter": "dev" if settings.app_env in {"dev", "development", "local"} else "json",
-            }
-        },
-        "root": {"level": "INFO", "handlers": ["console"]},
-        # Reduce noise from third-party libs
+        "handlers": handlers,
+        "root": {"level": "INFO", "handlers": root_handlers},
         "loggers": {
             "httpx": {"level": "WARNING"},
             "pymongo": {"level": "WARNING"},
             "uvicorn.access": {"level": "WARNING"},
         },
     }
-)
 
+
+logging.config.dictConfig(_build_logging_config())
 logger = logging.getLogger(__name__)
+
+# ── Error tracking (GlitchTip via Sentry SDK) ─────────────────────────────────
+# Active ONLY in production. Never in local to avoid noise.
+if _IS_PROD and settings.glitchtip_dsn:
+    from app.core.error_tracking import init_sentry
+
+    init_sentry(
+        dsn=settings.glitchtip_dsn,
+        environment=settings.app_env,
+        release=settings.app_version,
+    )
+elif _IS_LOCAL:
+    logger.info(
+        '"Error tracking DISABLED in local mode — errors logged to logs/dev.log"'
+    )
+else:
+    logger.warning('"GLITCHTIP_DSN not set — error tracking disabled"')
 
 app = FastAPI(title=settings.api_name, version=settings.api_version)
 
@@ -89,7 +131,9 @@ def _startup_checks() -> None:
 
     if settings.app_env not in {"dev", "development", "local"}:
         if not settings.llm_classifier_api_key:
-            logger.warning('"LLM_CLASSIFIER_API_KEY not set — LLM classifier and image moderation disabled."')
+            logger.warning(
+                '"LLM_CLASSIFIER_API_KEY not set — LLM classifier and image moderation disabled."'
+            )
 
     logger.info(
         '"API started env=%s llm_enabled=%s vector_search=%s spacy=%s"',

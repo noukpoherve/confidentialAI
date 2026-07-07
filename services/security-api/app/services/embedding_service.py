@@ -61,16 +61,24 @@ def get_embedding(text: str) -> list[float] | None:
     for attempt in range(_MAX_RETRIES + 1):
         if attempt > 0:
             delay = _RETRY_BACKOFF_BASE * (2 ** (attempt - 1))
-            logger.debug("Embedding retry %d/%d after %.1fs", attempt, _MAX_RETRIES, delay)
+            logger.debug(
+                "Embedding retry %d/%d after %.1fs", attempt, _MAX_RETRIES, delay
+            )
             time.sleep(delay)
         try:
             with httpx.Client(timeout=timeout) as client:
                 response = client.post(url, headers=headers, json=body)
             if response.status_code == 429:
-                logger.debug("Embedding rate-limited (attempt %d/%d)", attempt + 1, _MAX_RETRIES + 1)
+                logger.debug(
+                    "Embedding rate-limited (attempt %d/%d)",
+                    attempt + 1,
+                    _MAX_RETRIES + 1,
+                )
                 continue
             if not response.is_success:
-                logger.debug("Embedding HTTP %d (attempt %d)", response.status_code, attempt + 1)
+                logger.debug(
+                    "Embedding HTTP %d (attempt %d)", response.status_code, attempt + 1
+                )
                 return None
             payload = response.json()
             data = payload.get("data", [])
@@ -85,12 +93,21 @@ def get_embedding(text: str) -> list[float] | None:
                 _EMBED_CACHE.popitem(last=False)
             return out
         except httpx.TimeoutException:
-            logger.debug("Embedding timeout (attempt %d/%d)", attempt + 1, _MAX_RETRIES + 1)
+            logger.debug(
+                "Embedding timeout (attempt %d/%d)", attempt + 1, _MAX_RETRIES + 1
+            )
         except Exception as exc:
-            logger.debug("Embedding error (attempt %d/%d): %s", attempt + 1, _MAX_RETRIES + 1, exc)
+            logger.debug(
+                "Embedding error (attempt %d/%d): %s",
+                attempt + 1,
+                _MAX_RETRIES + 1,
+                exc,
+            )
             return None  # Non-transient errors don't benefit from retry
 
-    logger.warning("Embedding failed after %d attempts — vector search skipped.", _MAX_RETRIES + 1)
+    logger.warning(
+        "Embedding failed after %d attempts — vector search skipped.", _MAX_RETRIES + 1
+    )
     return None
 
 

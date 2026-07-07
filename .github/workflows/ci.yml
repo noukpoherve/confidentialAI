@@ -1,0 +1,36 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# CI — Validation gate
+#
+# Fires only when this workflow file itself changes on main or develop.
+#
+# All release logic (SemVer tags, CHANGELOG, GitHub Release, extension
+# artifacts) is fully delegated to release.yml.
+# ══════════════════════════════════════════════════════════════════════════════
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - ".github/workflows/ci.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - ".github/workflows/ci.yml"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: CI Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: CI gate
+        run: echo "CI gate passed — see frontend.yml and backend.yml for build results."

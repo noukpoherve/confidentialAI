@@ -19,20 +19,21 @@ Safe mode (enabled by default via SAFE_MODE_ENABLED env var):
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 
 from app.core.config import settings
+from app.core.policy_engine import PolicyDecision
 
 logger = logging.getLogger(__name__)
-from app.core.policy_engine import PolicyDecision
+
 
 # ── Risk weights per moderation category ────────────────────────────────────
 # A single hit takes the weight of the highest-scoring category.
 # 100 = unconditional BLOCK (e.g. CSAM).
 _CATEGORY_WEIGHTS: dict[str, int] = {
-    "sexual/minors": 100,   # Absolute BLOCK — no override.
+    "sexual/minors": 100,  # Absolute BLOCK — no override.
     "sexual": 85,
     "violence/graphic": 82,
     "self-harm/intent": 80,
@@ -40,13 +41,13 @@ _CATEGORY_WEIGHTS: dict[str, int] = {
     "hate/threatening": 76,
     "illicit/violent": 74,  # Drugs + violence combination.
     "self-harm": 70,
-    "violence": 68,         # Raised vs previous 65 — violence is never harmless.
+    "violence": 68,  # Raised vs previous 65 — violence is never harmless.
     "hate": 62,
     "harassment/threatening": 62,
-    "illicit": 72,          # Drugs, narcotics, dangerous substances — always BLOCK.
+    "illicit": 72,  # Drugs, narcotics, dangerous substances — always BLOCK.
     "harassment": 45,
     # Virtual category inserted when safe-mode catches low-score nudity.
-    "partial_nudity": 42,   # WARN territory; user decides.
+    "partial_nudity": 42,  # WARN territory; user decides.
 }
 
 _CATEGORY_LABELS: dict[str, str] = {
@@ -75,7 +76,7 @@ def _fail_open(reason: str) -> PolicyDecision:
         reasons=[reason],
         detections=[],
         redactions=[],
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     )
 
 
@@ -149,11 +150,15 @@ def run_image_moderator(
     human-readable label and the model's confidence score.
     """
     if not settings.llm_classifier_enabled:
-        return _fail_open("Image moderation disabled — LLM_CLASSIFIER_ENABLED is false.")
+        return _fail_open(
+            "Image moderation disabled — LLM_CLASSIFIER_ENABLED is false."
+        )
 
     result = _call_moderation_api(image_base64, mime_type)
     if result is None:
-        return _fail_open("Image moderation API unavailable — upload allowed (fail-open).")
+        return _fail_open(
+            "Image moderation API unavailable — upload allowed (fail-open)."
+        )
 
     categories: dict[str, bool] = result.get("categories", {})
     scores: dict[str, float] = result.get("category_scores", {})
@@ -180,7 +185,7 @@ def run_image_moderator(
             reasons=["No sensitive content detected in image."],
             detections=[],
             redactions=[],
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
 
     if not hit_categories:
@@ -192,16 +197,20 @@ def run_image_moderator(
             "valuePreview": _CATEGORY_LABELS.get(cat, cat.replace("/", " — ").title()),
             # For the virtual partial_nudity category use the raw sexual score.
             "confidence": round(
-                float(scores.get("sexual", 0.0))
-                if cat == "partial_nudity"
-                else float(scores.get(cat, 0.8)),
+                (
+                    float(scores.get("sexual", 0.0))
+                    if cat == "partial_nudity"
+                    else float(scores.get(cat, 0.8))
+                ),
                 3,
             ),
         }
         for cat in hit_categories
     ]
 
-    max_weight = max((_CATEGORY_WEIGHTS.get(cat, 40) for cat in hit_categories), default=0)
+    max_weight = max(
+        (_CATEGORY_WEIGHTS.get(cat, 40) for cat in hit_categories), default=0
+    )
     risk_score = min(max_weight, 100)
 
     reasons: list[str] = []
@@ -236,5 +245,5 @@ def run_image_moderator(
         reasons=reasons,
         detections=detections,
         redactions=[],
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     )

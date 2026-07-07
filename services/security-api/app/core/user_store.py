@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Protocol
 from uuid import uuid4
 
@@ -14,20 +14,15 @@ except Exception:  # pragma: no cover
 
 
 class UserStore(Protocol):
-    def create_user(self, email: str, password_hash: str) -> dict:
-        ...
+    def create_user(self, email: str, password_hash: str) -> dict: ...
 
-    def get_user_by_email(self, email: str) -> dict | None:
-        ...
+    def get_user_by_email(self, email: str) -> dict | None: ...
 
-    def get_user_by_id(self, user_id: str) -> dict | None:
-        ...
+    def get_user_by_id(self, user_id: str) -> dict | None: ...
 
-    def get_user_settings(self, user_id: str) -> dict:
-        ...
+    def get_user_settings(self, user_id: str) -> dict: ...
 
-    def upsert_user_settings(self, user_id: str, payload: dict) -> dict:
-        ...
+    def upsert_user_settings(self, user_id: str, payload: dict) -> dict: ...
 
 
 @dataclass
@@ -46,7 +41,7 @@ class InMemoryUserStore:
             "id": user_id,
             "email": normalized_email,
             "passwordHash": password_hash,
-            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "createdAt": datetime.now(UTC).isoformat(),
         }
         self.users[user_id] = user
         self.users_by_email[normalized_email] = user_id
@@ -72,7 +67,9 @@ class InMemoryUserStore:
 
 
 class MongoUserStore:
-    def __init__(self, uri: str, db_name: str, users_collection: str, settings_collection: str) -> None:
+    def __init__(
+        self, uri: str, db_name: str, users_collection: str, settings_collection: str
+    ) -> None:
         if MongoClient is None:
             raise RuntimeError("pymongo unavailable")
         self.client = MongoClient(uri, serverSelectionTimeoutMS=800)
@@ -90,7 +87,7 @@ class MongoUserStore:
             "id": str(uuid4()),
             "email": normalized_email,
             "passwordHash": password_hash,
-            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "createdAt": datetime.now(UTC).isoformat(),
         }
         self.users.insert_one(dict(user))
         return user
@@ -104,12 +101,16 @@ class MongoUserStore:
         return dict(user) if user else None
 
     def get_user_settings(self, user_id: str) -> dict:
-        settings_obj = self.user_settings.find_one({"userId": user_id}, {"_id": 0, "userId": 0})
+        settings_obj = self.user_settings.find_one(
+            {"userId": user_id}, {"_id": 0, "userId": 0}
+        )
         return dict(settings_obj) if settings_obj else _default_settings()
 
     def upsert_user_settings(self, user_id: str, payload: dict) -> dict:
         settings_obj = {"userId": user_id, **_build_settings_obj(payload)}
-        self.user_settings.update_one({"userId": user_id}, {"$set": settings_obj}, upsert=True)
+        self.user_settings.update_one(
+            {"userId": user_id}, {"$set": settings_obj}, upsert=True
+        )
         return {k: v for k, v in settings_obj.items() if k != "userId"}
 
 
@@ -125,7 +126,7 @@ def _default_settings() -> dict:
         "customDomains": [],
         "userAddedPlatforms": [],
         "protected_urls": [],
-        "updatedAt": datetime.now(timezone.utc).isoformat(),
+        "updatedAt": datetime.now(UTC).isoformat(),
     }
 
 
@@ -141,7 +142,9 @@ def _build_settings_obj(payload: dict) -> dict:
         "guardrailEnabled": bool(payload.get("guardrailEnabled", True)),
         "autoAnonymize": bool(payload.get("autoAnonymize", False)),
         "contentModerationEnabled": bool(payload.get("contentModerationEnabled", True)),
-        "responseModerationEnabled": bool(payload.get("responseModerationEnabled", True)),
+        "responseModerationEnabled": bool(
+            payload.get("responseModerationEnabled", True)
+        ),
         "avsRevealBlurred": bool(payload.get("avsRevealBlurred", False)),
         "imageModerationEnabled": bool(payload.get("imageModerationEnabled", True)),
         "enabledPlatformIds": list(payload.get("enabledPlatformIds", [])),
@@ -152,13 +155,17 @@ def _build_settings_obj(payload: dict) -> dict:
                 "label": str(p.get("label", "")),
                 "domain": str(p.get("domain", "")),
                 "pathPrefix": _clean_path_prefix(p.get("pathPrefix")),
-                "features": list(p.get("features", ["textAnalysis", "imageModeration"])),
+                "features": list(
+                    p.get("features", ["textAnalysis", "imageModeration"])
+                ),
             }
             for p in payload.get("userAddedPlatforms", [])
             if p.get("domain")
         ],
-        "protected_urls": [str(u).strip() for u in payload.get("protected_urls", []) if str(u).strip()],
-        "updatedAt": datetime.now(timezone.utc).isoformat(),
+        "protected_urls": [
+            str(u).strip() for u in payload.get("protected_urls", []) if str(u).strip()
+        ],
+        "updatedAt": datetime.now(UTC).isoformat(),
     }
 
 

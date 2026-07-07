@@ -1,15 +1,16 @@
 {
   "name": "admin-dashboard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "tsc --noEmit",
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@sentry/nextjs": "^10.50.0",
     "next": "^16.2.1",
     "react": "19.1.1",
     "react-dom": "19.1.1"

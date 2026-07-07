@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.core.config import settings
 from app.core.detectors import build_redactions, detect_sensitive_content
@@ -49,15 +49,15 @@ RISK_WEIGHTS: dict[str, int] = {
 # than when a user voluntarily includes the same data in their own prompt.
 # These multipliers are applied only in analyze_response().
 RESPONSE_RISK_MULTIPLIERS: dict[str, float] = {
-    "EMAIL": 1.5,        # 15 → 22 — model leaking an email crosses WARN alone
-    "PHONE": 0.8,        # 12 → 10 — de-emphasise; still noisy even after regex fix
-    "IBAN": 1.5,         # 35 → 52 — financial data leak is high risk
+    "EMAIL": 1.5,  # 15 → 22 — model leaking an email crosses WARN alone
+    "PHONE": 0.8,  # 12 → 10 — de-emphasise; still noisy even after regex fix
+    "IBAN": 1.5,  # 35 → 52 — financial data leak is high risk
     "SWIFT_BIC": 1.5,
     "LEGAL_HR": 1.2,
-    "API_KEY": 2.0,      # 45 → 90 — always BLOCK; model must never reproduce a secret
-    "PASSWORD": 2.0,     # 50 → 100 — always BLOCK
-    "TOKEN": 2.0,        # 40 → 80 — always BLOCK
-    "INTERNAL_URL": 1.5, # 30 → 45 — internal topology exposed in response
+    "API_KEY": 2.0,  # 45 → 90 — always BLOCK; model must never reproduce a secret
+    "PASSWORD": 2.0,  # 50 → 100 — always BLOCK
+    "TOKEN": 2.0,  # 40 → 80 — always BLOCK
+    "INTERNAL_URL": 1.5,  # 30 → 45 — internal topology exposed in response
     "SOURCE_CODE": 1.0,  # neutral — code in a response is often intentional
     "PROMPT_INJECTION": 1.0,  # already 70 (BLOCK territory)
 }
@@ -76,11 +76,16 @@ def _score_hits_response(hit_types: list[str]) -> int:
     return min(int(raw_score), 100)
 
 
-def _decide_action(score: int, hit_types: set[str], user_consent: bool | None) -> tuple[str, list[str]]:
+def _decide_action(
+    score: int, hit_types: set[str], user_consent: bool | None
+) -> tuple[str, list[str]]:
     """Decision logic for USER PROMPTS (input analysis)."""
     reasons: list[str] = []
 
-    if settings.enable_strict_block_on_secret and {"API_KEY", "PASSWORD", "TOKEN"} & hit_types:
+    if (
+        settings.enable_strict_block_on_secret
+        and {"API_KEY", "PASSWORD", "TOKEN"} & hit_types
+    ):
         reasons.append("Critical secret detected.")
         return "BLOCK", reasons
 
@@ -119,7 +124,9 @@ def _decide_action_response(score: int, hit_types: set[str]) -> tuple[str, list[
 
     # Any reproduced secret is an unconditional BLOCK.
     if {"API_KEY", "PASSWORD", "TOKEN"} & hit_types:
-        reasons.append("Model reproduced a critical secret — response blocked to prevent leakage.")
+        reasons.append(
+            "Model reproduced a critical secret — response blocked to prevent leakage."
+        )
         return "BLOCK", reasons
 
     if score >= 60:
@@ -142,7 +149,9 @@ def _build_detections(hits: list) -> list[dict]:
     return [
         {
             "type": h.hit_type,
-            "valuePreview": (h.raw_value[:21] + "...") if len(h.raw_value) > 24 else h.raw_value,
+            "valuePreview": (
+                (h.raw_value[:21] + "...") if len(h.raw_value) > 24 else h.raw_value
+            ),
             "confidence": h.confidence,
         }
         for h in hits
@@ -164,7 +173,9 @@ def analyze_prompt(prompt: str, user_consent: bool | None = None) -> PolicyDecis
     risk_score = _score_hits(hit_types)
     action, reasons = _decide_action(risk_score, unique_hit_types, user_consent)
 
-    redactions = build_redactions(hits) if action in {"ANONYMIZE", "WARN", "BLOCK"} else []
+    redactions = (
+        build_redactions(hits) if action in {"ANONYMIZE", "WARN", "BLOCK"} else []
+    )
 
     return PolicyDecision(
         action=action,
@@ -172,7 +183,7 @@ def analyze_prompt(prompt: str, user_consent: bool | None = None) -> PolicyDecis
         reasons=reasons,
         detections=_build_detections(hits),
         redactions=redactions,
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     )
 
 
@@ -191,7 +202,9 @@ def analyze_response(response_text: str) -> PolicyDecision:
     risk_score = _score_hits_response(hit_types)
     action, reasons = _decide_action_response(risk_score, unique_hit_types)
 
-    redactions = build_redactions(hits) if action in {"ANONYMIZE", "WARN", "BLOCK"} else []
+    redactions = (
+        build_redactions(hits) if action in {"ANONYMIZE", "WARN", "BLOCK"} else []
+    )
 
     return PolicyDecision(
         action=action,
@@ -199,7 +212,7 @@ def analyze_response(response_text: str) -> PolicyDecision:
         reasons=reasons,
         detections=_build_detections(hits),
         redactions=redactions,
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     )
 
 
@@ -234,7 +247,9 @@ def analyze_avs_response(response_text: str) -> PolicyDecision:
     risk_score = _score_avs_moral_hits(hit_types)
     action, reasons = _decide_action_response(risk_score, unique_hit_types)
 
-    redactions = build_redactions(moral_hits) if action in {"ANONYMIZE", "WARN", "BLOCK"} else []
+    redactions = (
+        build_redactions(moral_hits) if action in {"ANONYMIZE", "WARN", "BLOCK"} else []
+    )
 
     return PolicyDecision(
         action=action,
@@ -242,5 +257,5 @@ def analyze_avs_response(response_text: str) -> PolicyDecision:
         reasons=reasons,
         detections=_build_detections(moral_hits),
         redactions=redactions,
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     )

@@ -1,14 +1,24 @@
 {
   "name": "confidential-agent-extension",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Chrome MV3 extension — DLP guardrail for generative AI prompts.",
   "scripts": {
     "build:css": "tailwindcss -i src/input.css -o tailwind.output.css --minify",
     "watch:css": "tailwindcss -i src/input.css -o tailwind.output.css --watch",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "build:extensions": "npm run build:css && node scripts/build-extensions.js --browser all --env production",
+    "build:extensions:chrome": "npm run build:css && node scripts/build-extensions.js --browser chrome --env production",
+    "build:extensions:firefox": "npm run build:css && node scripts/build-extensions.js --browser firefox --env production",
+    "build:extensions:edge": "npm run build:css && node scripts/build-extensions.js --browser edge --env production",
+    "build:extensions:opera": "npm run build:css && node scripts/build-extensions.js --browser opera --env production",
+    "build:extensions:safari": "npm run build:css && node scripts/build-extensions.js --browser safari --env production",
+    "build:dev": "npm run build:css && node scripts/build-extensions.js --browser chrome --env development",
+    "build:dev:all": "npm run build:css && node scripts/build-extensions.js --browser all --env development"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^3.0.5",
     "jsdom": "^25.0.1",
     "tailwindcss": "^3.4.17",
     "vitest": "^3.0.5"

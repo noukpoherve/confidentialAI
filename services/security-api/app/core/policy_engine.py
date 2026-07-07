@@ -22,13 +22,13 @@ class PolicyDecision:
 RISK_WEIGHTS: dict[str, int] = {
     "EMAIL": 15,
     "PHONE": 12,
-    "IBAN": 35,
+    "IBAN": 40,
     "SWIFT_BIC": 30,
     "LEGAL_HR": 16,
     "API_KEY": 45,
     "PASSWORD": 50,
     "TOKEN": 40,
-    "INTERNAL_URL": 30,
+    "INTERNAL_URL": 40,
     "SOURCE_CODE": 20,
     # A single injection attempt always crosses the BLOCK threshold (score >= 70).
     "PROMPT_INJECTION": 70,
@@ -64,14 +64,17 @@ RESPONSE_RISK_MULTIPLIERS: dict[str, float] = {
 
 
 def _score_hits(hit_types: list[str]) -> int:
-    raw_score = sum(RISK_WEIGHTS.get(t, 8) for t in hit_types)
+    # Score by distinct risk category, not by raw hit count: a single category
+    # (e.g. LEGAL_HR) matching several phrases in the same text must not inflate
+    # the score beyond what one instance of that category represents.
+    raw_score = sum(RISK_WEIGHTS.get(t, 8) for t in set(hit_types))
     return min(raw_score, 100)
 
 
 def _score_hits_response(hit_types: list[str]) -> int:
     raw_score = sum(
         RISK_WEIGHTS.get(t, 8) * RESPONSE_RISK_MULTIPLIERS.get(t, 1.0)
-        for t in hit_types
+        for t in set(hit_types)
     )
     return min(int(raw_score), 100)
 
@@ -228,7 +231,7 @@ AVS_MORAL_WEIGHTS: dict[str, int] = {
 
 
 def _score_avs_moral_hits(hit_types: list[str]) -> int:
-    raw = sum(AVS_MORAL_WEIGHTS.get(t, 0) for t in hit_types)
+    raw = sum(AVS_MORAL_WEIGHTS.get(t, 0) for t in set(hit_types))
     return min(raw, 100)
 
 

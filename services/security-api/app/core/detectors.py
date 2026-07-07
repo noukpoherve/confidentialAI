@@ -32,6 +32,9 @@ DETECTOR_PATTERNS: dict[str, re.Pattern[str]] = {
     "API_KEY": re.compile(r"\b(?:sk|rk|pk)_[A-Za-z0-9]{16,}\b"),
     "PASSWORD": re.compile(
         r"(?i)\b(?:password|passphrase|pwd|mot\s*de\s*passe)\b(?:\s*(?:is|est|=|:)\s*|\s+)(?:\"[^\"]{3,}\"|'[^']{3,}'|[^\s,;]{4,})"
+        # Secret-looking variable assignments (SECRET_KEY = '...', API_SECRET = "...")
+        # — common secret-naming conventions that don't use the word "password".
+        r"|\b\w*(?:SECRET|PRIVATE_KEY)\w*\s*=\s*(?:\"[^\"]{6,}\"|'[^']{6,}')"
     ),
     "TOKEN": re.compile(r"(?i)\b(?:token|bearer)\s*[:=]?\s*[A-Za-z0-9\-_\.]{12,}\b"),
     "INTERNAL_URL": re.compile(

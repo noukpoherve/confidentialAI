@@ -43,7 +43,7 @@ export function LoginForm({ locale, labels }: { locale: string; labels: Labels }
           {error}
         </div>
       )}
-      <div>
+      <div suppressHydrationWarning>
         <label className="block text-xs font-semibold uppercase tracking-wide text-ink-muted">
           {labels.email}
         </label>
@@ -56,7 +56,7 @@ export function LoginForm({ locale, labels }: { locale: string; labels: Labels }
           autoComplete="email"
         />
       </div>
-      <div>
+      <div suppressHydrationWarning>
         <label className="block text-xs font-semibold uppercase tracking-wide text-ink-muted">
           {labels.password}
         </label>
